@@ -53,3 +53,6 @@ peer-name.conf
 .env 
 .env.*
 config/.env
+
+# Per-developer Claude Code settings (paths and tool allowlists vary).
+.claude/settings.local.json
