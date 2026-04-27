@@ -1,0 +1,12 @@
+{
+  "intent_version": "2.10.0",
+  "intent_dir": "intent",
+  "plugins": {
+    "claude": {
+      "subagents_path": "intent/plugins/claude/subagents"
+    },
+    "agents": {
+      "config_path": "intent/plugins/agents"
+    }
+  }
+}

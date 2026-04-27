@@ -38,8 +38,11 @@ peer-name.conf
 # Ignore .elixir_ls
 .elixir_ls
 
-# Ignore .backup 
-.backup 
+# Ignore .backup
+.backup
+
+# AGENTS.md regeneration safety net (intent agents sync writes this; transient).
+/AGENTS.md.bak
 
 # Never take .env into version control 
 .env 
