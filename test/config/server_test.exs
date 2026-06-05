@@ -43,52 +43,23 @@ defmodule Arca.Config.ServerTest do
       )
     )
 
-    # Start necessary processes for testing
-    # Use nested try to avoid issues with already started processes
-    registry_started =
-      try do
-        Registry.start_link(keys: :duplicate, name: Arca.Config.Registry)
-        true
-      rescue
-        _ -> false
-      end
+    # Ensure the registry and servers are running (tolerating app-owned instances).
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.Registry}
+    )
 
-    try do
-      if not registry_started do
-        # Registry is already started, no need to do anything
-      end
-
-      if not GenServer.whereis(Arca.Config.Cache) do
-        start_supervised(Arca.Config.Cache)
-      end
-
-      if not GenServer.whereis(Arca.Config.Server) do
-        start_supervised(Arca.Config.Server)
-      end
-    rescue
-      _ -> :ok
-    end
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Cache)
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Server)
 
     # Reload the server with new config
     Server.reload()
 
     on_exit(fn ->
-      # Restore original environment variables
-      if original_env.app_specific_path,
-        do: System.put_env(app_specific_path_var, original_env.app_specific_path),
-        else: System.delete_env(app_specific_path_var)
-
-      if original_env.app_specific_file,
-        do: System.put_env(app_specific_file_var, original_env.app_specific_file),
-        else: System.delete_env(app_specific_file_var)
-
-      if original_env.config_path,
-        do: System.put_env("ARCA_CONFIG_PATH", original_env.config_path),
-        else: System.delete_env("ARCA_CONFIG_PATH")
-
-      if original_env.config_file,
-        do: System.put_env("ARCA_CONFIG_FILE", original_env.config_file),
-        else: System.delete_env("ARCA_CONFIG_FILE")
+      # Restore original environment variables (delete when originally unset).
+      Arca.Config.Test.Support.restore_env(app_specific_path_var, original_env.app_specific_path)
+      Arca.Config.Test.Support.restore_env(app_specific_file_var, original_env.app_specific_file)
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_PATH", original_env.config_path)
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_FILE", original_env.config_file)
 
       # Clean up test directory
       File.rm_rf!(test_dir)
@@ -168,27 +139,14 @@ defmodule Arca.Config.ServerTest do
       Application.put_env(:arca_config, :config_domain, :test_app)
 
       on_exit(fn ->
-        # Restore original environment variables
-        if original_path_env,
-          do: System.put_env(app_specific_path_var, original_path_env),
-          else: System.delete_env(app_specific_path_var)
+        # Restore original environment variables (delete when originally unset).
+        Arca.Config.Test.Support.restore_env(app_specific_path_var, original_path_env)
+        Arca.Config.Test.Support.restore_env(app_specific_file_var, original_file_env)
 
-        if original_file_env,
-          do: System.put_env(app_specific_file_var, original_file_env),
-          else: System.delete_env(app_specific_file_var)
-
-        # Restore original application settings
-        if original_config_path,
-          do: Application.put_env(:arca_config, :config_path, original_config_path),
-          else: Application.delete_env(:arca_config, :config_path)
-
-        if original_config_file,
-          do: Application.put_env(:arca_config, :config_file, original_config_file),
-          else: Application.delete_env(:arca_config, :config_file)
-
-        if original_domain,
-          do: Application.put_env(:arca_config, :config_domain, original_domain),
-          else: Application.delete_env(:arca_config, :config_domain)
+        # Restore original application settings (delete when originally unset).
+        Arca.Config.Test.Support.restore_app_env(:config_path, original_config_path)
+        Arca.Config.Test.Support.restore_app_env(:config_file, original_config_file)
+        Arca.Config.Test.Support.restore_app_env(:config_domain, original_domain)
 
         # Clean up test directories
         File.rm_rf!(test_dir)
@@ -392,7 +350,7 @@ defmodule Arca.Config.ServerTest do
       # Test with original get_config implementation (returns map directly)
       Server.notify_external_change()
       assert_receive {:callback_received, config}, 500
-      assert is_map(config)
+      assert %{"app" => %{"name" => "TestApp"}} = config
 
       # Mock the get_config implementation to return {:ok, config} tuple
       :meck.new(GenServer, [:passthrough])
@@ -418,9 +376,13 @@ defmodule Arca.Config.ServerTest do
 
   describe "subscribe/1 and notifications" do
     setup do
-      # Make sure registry is clean for these tests
-      # Give a moment for processes to start
-      Process.sleep(100)
+      # Ensure the registry and server are running before subscribing
+      # (synchronous start instead of a timing sleep).
+      Arca.Config.Test.Support.ensure_started(
+        {Registry, keys: :duplicate, name: Arca.Config.Registry}
+      )
+
+      Arca.Config.Test.Support.ensure_started(Arca.Config.Server)
       :ok
     end
 

@@ -72,18 +72,9 @@ defmodule Arca.Config.SwitchLocationTest do
     Config.reload()
 
     on_exit(fn ->
-      # Restore original environment variables
-      if original_env.app_specific_path do
-        System.put_env(app_specific_path_var, original_env.app_specific_path)
-      else
-        System.delete_env(app_specific_path_var)
-      end
-
-      if original_env.app_specific_file do
-        System.put_env(app_specific_file_var, original_env.app_specific_file)
-      else
-        System.delete_env(app_specific_file_var)
-      end
+      # Restore original environment variables (delete when originally unset).
+      Arca.Config.Test.Support.restore_env(app_specific_path_var, original_env.app_specific_path)
+      Arca.Config.Test.Support.restore_env(app_specific_file_var, original_env.app_specific_file)
 
       # Clean up test directories
       File.rm_rf!(test_base_dir)
@@ -270,13 +261,9 @@ defmodule Arca.Config.SwitchLocationTest do
     end
 
     test "callbacks are notified on location switch", %{location2_dir: location2_dir} do
-      # Add a callback
-      callback_called = :ets.new(:callback_test, [:set, :public])
-      :ets.insert(callback_called, {:called, false})
-
-      callback_fn = fn ->
-        :ets.insert(callback_called, {:called, true})
-      end
+      # Notify this process from the callback so we can await it synchronously.
+      test_pid = self()
+      callback_fn = fn -> send(test_pid, :callback_invoked) end
 
       {:ok, ref} = Config.add_callback(callback_fn)
 
@@ -287,15 +274,11 @@ defmodule Arca.Config.SwitchLocationTest do
           file: "settings.json"
         )
 
-      # Give callback time to execute
-      Process.sleep(100)
-
-      # Check if callback was called
-      assert [{:called, true}] = :ets.lookup(callback_called, :called)
+      # Await the callback instead of sleeping.
+      assert_receive :callback_invoked, 1000
 
       # Clean up
       Config.remove_callback(ref)
-      :ets.delete(callback_called)
     end
 
     test "environment variables are properly updated", %{
@@ -362,20 +345,9 @@ defmodule Arca.Config.SwitchLocationTest do
       _ -> :ok
     end
 
-    # Ensure cache is running
-    unless GenServer.whereis(Arca.Config.Cache) do
-      start_supervised!(Arca.Config.Cache)
-    end
-
-    # Ensure server is running
-    unless GenServer.whereis(Arca.Config.Server) do
-      start_supervised!(Arca.Config.Server)
-    end
-
-    # Ensure file watcher is running
-    unless GenServer.whereis(Arca.Config.FileWatcher) do
-      start_supervised!(Arca.Config.FileWatcher)
-    end
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Cache)
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Server)
+    Arca.Config.Test.Support.ensure_started(Arca.Config.FileWatcher)
 
     :ok
   end

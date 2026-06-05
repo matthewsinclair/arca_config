@@ -110,17 +110,8 @@ defmodule Arca.Config.Cfg.Test do
 
     test "load valid configuration file (and succeed)" do
       # Check that we can load the default configuration file
-      case Cfg.load() do
-        {:ok, config} ->
-          # will exec
-          assert config != nil
-          assert config["id"] == "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON"
-
-        {:error, reason} ->
-          # won't exec
-          dbg(reason)
-          assert reason
-      end
+      assert {:ok, config} = Cfg.load()
+      assert config["id"] == "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON"
     end
 
     test "load nonexistent configuration file (returns empty config)" do
@@ -132,18 +123,8 @@ defmodule Arca.Config.Cfg.Test do
       System.put_env(app_specific_file_var, "nonexistent.json")
 
       # Check that we get an empty config for a nonexistent file
-      case Cfg.load() do
-        {:ok, config} ->
-          # Will execute - we should get an empty config
-          assert config != nil
-          assert is_map(config)
-          assert map_size(config) == 0
-
-        {:error, reason} ->
-          # won't exec - we handle nonexistent files gracefully now
-          dbg(reason)
-          assert false
-      end
+      assert {:ok, config} = Cfg.load()
+      assert config == %{}
 
       # Clean up
       System.delete_env(app_specific_path_var)
@@ -164,16 +145,8 @@ defmodule Arca.Config.Cfg.Test do
       System.put_env(app_specific_file_var, "malformed.json")
 
       # Check that we properly fail on malformed JSON
-      case Cfg.load() do
-        {:ok, config} ->
-          # won't exec - this file shouldn't parse
-          dbg(config)
-          assert false
-
-        {:error, reason} ->
-          # will exec
-          assert reason =~ "Error parsing config"
-      end
+      assert {:error, reason} = Cfg.load()
+      assert reason =~ "Error parsing config"
 
       # Clean up
       System.delete_env(app_specific_path_var)
@@ -213,16 +186,12 @@ defmodule Arca.Config.Cfg.Test do
       timestamp_in = DateTime.to_string(DateTime.utc_now())
 
       # Put a new value into the config and ensure that works
-      case Cfg.put(:timestamp, timestamp_in) do
-        {:ok, value} -> assert value == timestamp_in
-        {:error, reason} -> flunk("Error: #{reason}")
-      end
+      assert {:ok, value} = Cfg.put(:timestamp, timestamp_in)
+      assert value == timestamp_in
 
       # Grab that value back from the config and ensure that works
-      case Cfg.get(:timestamp) do
-        {:ok, timestamp_out} -> assert timestamp_out == timestamp_in
-        {:error, reason} -> flunk("Error: #{reason}")
-      end
+      assert {:ok, timestamp_out} = Cfg.get(:timestamp)
+      assert timestamp_out == timestamp_in
 
       # Remove the file now we're done with it
       File.rm!(config_file)

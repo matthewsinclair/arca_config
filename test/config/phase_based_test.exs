@@ -23,16 +23,9 @@ defmodule Arca.Config.PhaseBasedTest do
     send(Arca.Config.FileWatcher, {:reset_to_dormant, self()})
 
     on_exit(fn ->
-      # Restore original environment variables
+      # Restore original environment variables (delete when originally unset).
       for {key, value} <- original_env do
-        if value do
-          case key do
-            :test_app_path -> System.put_env("TEST_APP_CONFIG_PATH", value)
-            :test_app_file -> System.put_env("TEST_APP_CONFIG_FILE", value)
-            :arca_path -> System.put_env("ARCA_CONFIG_PATH", value)
-            :arca_file -> System.put_env("ARCA_CONFIG_FILE", value)
-          end
-        end
+        Arca.Config.Test.Support.restore_env(env_var_for(key), value)
       end
 
       Application.delete_env(:arca_config, :config_domain)
@@ -40,6 +33,13 @@ defmodule Arca.Config.PhaseBasedTest do
       send(Arca.Config.FileWatcher, {:reset_to_dormant, self()})
     end)
   end
+
+  # Map a captured-env key to its environment variable name (pattern-matched,
+  # so the on_exit restore stays free of case/if -- IN-EX-TEST-005).
+  defp env_var_for(:test_app_path), do: "TEST_APP_CONFIG_PATH"
+  defp env_var_for(:test_app_file), do: "TEST_APP_CONFIG_FILE"
+  defp env_var_for(:arca_path), do: "ARCA_CONFIG_PATH"
+  defp env_var_for(:arca_file), do: "ARCA_CONFIG_FILE"
 
   test "load_config_phase/0 loads configuration and starts file watching" do
     # Create test config file

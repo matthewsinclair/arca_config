@@ -36,11 +36,7 @@ defmodule Arca.Config.AutoConfigTest do
         # Parent directory
         Path.join(Path.dirname(File.cwd!()), ".test_app")
       ]
-      |> Enum.each(fn dir ->
-        if File.exists?(dir) do
-          File.rm_rf!(dir)
-        end
-      end)
+      |> Enum.each(&File.rm_rf!/1)
 
       # Cleanup the test directory
       File.rm_rf!(test_dir)
@@ -201,34 +197,20 @@ defmodule Arca.Config.AutoConfigTest do
 
   # Helper function to ensure config processes are running
   defp ensure_config_processes do
-    # Make sure registry is started
-    unless Process.whereis(Arca.Config.Registry) do
-      Registry.start_link(keys: :duplicate, name: Arca.Config.Registry)
-    end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.Registry}
+    )
 
-    # Make sure callback registry is started
-    unless Process.whereis(Arca.Config.CallbackRegistry) do
-      Registry.start_link(keys: :duplicate, name: Arca.Config.CallbackRegistry)
-    end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.CallbackRegistry}
+    )
 
-    # Make sure simple callback registry is started
-    unless Process.whereis(Arca.Config.SimpleCallbackRegistry) do
-      Registry.start_link(keys: :duplicate, name: Arca.Config.SimpleCallbackRegistry)
-    end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.SimpleCallbackRegistry}
+    )
 
-    # Make sure cache is started
-    unless Process.whereis(Arca.Config.Cache) do
-      {:ok, _} = Arca.Config.Cache.start_link(nil)
-    end
-
-    # Make sure server is started
-    unless Process.whereis(Arca.Config.Server) do
-      {:ok, _} = Arca.Config.Server.start_link(nil)
-    end
-
-    # Make sure file watcher is started
-    unless Process.whereis(Arca.Config.FileWatcher) do
-      {:ok, _} = Arca.Config.FileWatcher.start_link(nil)
-    end
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Cache)
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Server)
+    Arca.Config.Test.Support.ensure_started(Arca.Config.FileWatcher)
   end
 end

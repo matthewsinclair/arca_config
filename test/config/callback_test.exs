@@ -45,78 +45,32 @@ defmodule Arca.Config.CallbackTest do
       )
     )
 
-    # Start necessary processes for testing
-    # Use nested try to avoid issues with already started processes
-    registry_started =
-      try do
-        Registry.start_link(keys: :duplicate, name: Arca.Config.Registry)
-        true
-      rescue
-        _ -> false
-      end
+    # Ensure the registries and servers the callbacks need are running
+    # (tolerating instances the application already owns).
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.Registry}
+    )
 
-    # Start the callback registry if it doesn't exist
-    callback_registry_started =
-      try do
-        Registry.start_link(keys: :duplicate, name: Arca.Config.CallbackRegistry)
-        true
-      rescue
-        _ -> false
-      end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.CallbackRegistry}
+    )
 
-    # Start the simple callback registry if it doesn't exist
-    simple_callback_registry_started =
-      try do
-        Registry.start_link(keys: :duplicate, name: Arca.Config.SimpleCallbackRegistry)
-        true
-      rescue
-        _ -> false
-      end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.SimpleCallbackRegistry}
+    )
 
-    try do
-      if not registry_started do
-        # Registry is already started, no need to do anything
-      end
-
-      if not callback_registry_started do
-        # Callback Registry is already started, no need to do anything
-      end
-
-      if not simple_callback_registry_started do
-        # Simple Callback Registry is already started, no need to do anything
-      end
-
-      if not GenServer.whereis(Arca.Config.Cache) do
-        start_supervised(Arca.Config.Cache)
-      end
-
-      if not GenServer.whereis(Arca.Config.Server) do
-        start_supervised(Arca.Config.Server)
-      end
-    rescue
-      _ -> :ok
-    end
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Cache)
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Server)
 
     # Reload the server with new config
     Server.reload()
 
     on_exit(fn ->
-      # Restore original environment variables
-      if original_env.app_specific_path,
-        do: System.put_env(app_specific_path_var, original_env.app_specific_path),
-        else: System.delete_env(app_specific_path_var)
-
-      if original_env.app_specific_file,
-        do: System.put_env(app_specific_file_var, original_env.app_specific_file),
-        else: System.delete_env(app_specific_file_var)
-
-      if original_env.config_path,
-        do: System.put_env("ARCA_CONFIG_PATH", original_env.config_path),
-        else: System.delete_env("ARCA_CONFIG_PATH")
-
-      if original_env.config_file,
-        do: System.put_env("ARCA_CONFIG_FILE", original_env.config_file),
-        else: System.delete_env("ARCA_CONFIG_FILE")
+      # Restore original environment variables (delete when originally unset).
+      Arca.Config.Test.Support.restore_env(app_specific_path_var, original_env.app_specific_path)
+      Arca.Config.Test.Support.restore_env(app_specific_file_var, original_env.app_specific_file)
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_PATH", original_env.config_path)
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_FILE", original_env.config_file)
 
       # Clean up test directory
       File.rm_rf!(test_dir)

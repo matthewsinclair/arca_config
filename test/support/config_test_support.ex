@@ -59,4 +59,31 @@ defmodule Arca.Config.Test.Support do
   def on_exit(fun) do
     ExUnit.Callbacks.on_exit(fun)
   end
+
+  @doc """
+  Restore an environment variable to a captured value, deleting it when it was
+  originally unset. Pattern-matched so test setup/on_exit avoid if/else
+  (IN-EX-TEST-005).
+  """
+  def restore_env(var, nil), do: System.delete_env(var)
+  def restore_env(var, value), do: System.put_env(var, value)
+
+  @doc """
+  Restore an `:arca_config` application setting to a captured value, deleting it
+  when it was originally unset. Pattern-matched so callers avoid if/else.
+  """
+  def restore_app_env(key, nil), do: Application.delete_env(:arca_config, key)
+  def restore_app_env(key, value), do: Application.put_env(:arca_config, key, value)
+
+  @doc """
+  Ensure a process is running under the test supervisor, tolerating an instance
+  the application already owns. Keeps test setup straight-line.
+  """
+  def ensure_started(child_spec) do
+    child_spec |> ExUnit.Callbacks.start_supervised() |> handle_started()
+  end
+
+  defp handle_started({:ok, _pid}), do: :ok
+  defp handle_started({:error, {:already_started, _pid}}), do: :ok
+  defp handle_started({:error, {{:already_started, _pid}, _spec}}), do: :ok
 end

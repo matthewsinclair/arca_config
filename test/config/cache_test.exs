@@ -4,13 +4,9 @@ defmodule Arca.Config.CacheTest do
   alias Arca.Config.Cache
 
   setup do
-    # Clean up before each test
-    if GenServer.whereis(Arca.Config.Cache) do
-      Cache.clear()
-    else
-      # Start the cache if not already running
-      start_supervised(Arca.Config.Cache)
-    end
+    # Ensure the cache is running and cleared for each test.
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Cache)
+    Cache.clear()
 
     :ok
   end

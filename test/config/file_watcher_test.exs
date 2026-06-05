@@ -41,47 +41,24 @@ defmodule Arca.Config.FileWatcherTest do
       )
     )
 
-    # Start necessary processes
-    try do
-      # Try to start the registry if it's not already running
-      if !Process.whereis(Arca.Config.Registry) do
-        start_supervised!({Registry, keys: :duplicate, name: Arca.Config.Registry})
-      end
+    # Ensure the registries, servers, and file watcher are running
+    # (tolerating instances the application already owns).
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.Registry}
+    )
 
-      # Try to start the callback registry if it's not already running
-      if !Process.whereis(Arca.Config.CallbackRegistry) do
-        start_supervised!({Registry, keys: :duplicate, name: Arca.Config.CallbackRegistry})
-      end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.CallbackRegistry}
+    )
 
-      # Try to start the cache if it's not already running
-      if !Process.whereis(Arca.Config.Cache) do
-        start_supervised!(Arca.Config.Cache)
-      end
-
-      # Try to start the server if it's not already running
-      if !Process.whereis(Arca.Config.Server) do
-        start_supervised!(Arca.Config.Server)
-      end
-
-      # Start file watcher for testing
-      if !Process.whereis(FileWatcher) do
-        start_supervised!(FileWatcher)
-      end
-    rescue
-      # Ignore errors from processes already started
-      _e -> :ok
-    end
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Cache)
+    Arca.Config.Test.Support.ensure_started(Arca.Config.Server)
+    Arca.Config.Test.Support.ensure_started(FileWatcher)
 
     on_exit(fn ->
-      # Restore original environment variables
-      if original_env.config_path,
-        do: System.put_env("ARCA_CONFIG_PATH", original_env.config_path),
-        else: System.delete_env("ARCA_CONFIG_PATH")
-
-      if original_env.config_file,
-        do: System.put_env("ARCA_CONFIG_FILE", original_env.config_file),
-        else: System.delete_env("ARCA_CONFIG_FILE")
-
+      # Restore original environment variables (delete when originally unset).
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_PATH", original_env.config_path)
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_FILE", original_env.config_file)
       System.delete_env(app_specific_path_var)
       System.delete_env(app_specific_file_var)
 
