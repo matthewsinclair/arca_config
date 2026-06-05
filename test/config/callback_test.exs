@@ -141,8 +141,11 @@ defmodule Arca.Config.CallbackTest do
     end
 
     test "returns error for non-zero-arity functions" do
+      # apply/3 keeps the deliberately-wrong arity out of the compiler's static
+      # arity check (the is_function(_, 0) guard makes the inferred param type
+      # (-> term())); we are exercising the runtime FunctionClauseError here.
       assert_raise FunctionClauseError, fn ->
-        Config.add_callback(fn _arg -> :ok end)
+        apply(Config, :add_callback, [fn _arg -> :ok end])
       end
     end
   end

@@ -1,6 +1,7 @@
 ---
 verblock: "20250323:v1.0: Claude-assisted - Updated with Arca.Config deployment information"
 ---
+
 # Arca.Config Deployment Guide
 
 This deployment guide provides instructions for deploying the Arca.Config library in various Elixir application environments. It covers installation, configuration, and integration with other tools and workflows.
@@ -77,13 +78,13 @@ This should successfully set and retrieve a configuration value.
 
 Configure Arca.Config behavior using these environment variables:
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| ARCA_CONFIG_PATH | Directory for configuration files | ~/.arca |
-| ARCA_CONFIG_FILE | Name of configuration file | config.json |
-| APP_NAME_CONFIG_PATH | App-specific path override | Not set |
-| APP_NAME_CONFIG_FILE | App-specific filename override | Not set |
-| APP_NAME_CONFIG_OVERRIDE_* | Override specific configuration values | Not set |
+| Variable                    | Purpose                                | Default     |
+| --------------------------- | -------------------------------------- | ----------- |
+| ARCA_CONFIG_PATH            | Directory for configuration files      | ~/.arca     |
+| ARCA_CONFIG_FILE            | Name of configuration file             | config.json |
+| APP_NAME_CONFIG_PATH        | App-specific path override             | Not set     |
+| APP_NAME_CONFIG_FILE        | App-specific filename override         | Not set     |
+| APP*NAME_CONFIG_OVERRIDE*\* | Override specific configuration values | Not set     |
 
 Example configuration in your deployment script or `.bashrc`:
 
@@ -119,6 +120,7 @@ Arca.Config supports overriding specific configuration values through environmen
 **Pattern:** `APP_NAME_CONFIG_OVERRIDE_SECTION_KEY=value`
 
 Where:
+
 - `APP_NAME` is your application name in uppercase
 - `SECTION_KEY` is the configuration path with dots replaced by underscores
 
@@ -195,22 +197,22 @@ For GenServers that need configuration values:
 ```elixir
 defmodule YourApp.SomeService do
   use GenServer
-  
+
   def init(_) do
     # Get initial config
     {:ok, db_config} = Arca.Config.get("database")
-    
+
     # Subscribe to config changes
     Arca.Config.subscribe("database")
-    
+
     {:ok, %{db_config: db_config}}
   end
-  
+
   def handle_info({:config_updated, ["database"], new_config}, state) do
     # React to configuration change
     {:noreply, %{state | db_config: new_config}}
   end
-  
+
   # Other GenServer callbacks...
 end
 ```
@@ -224,12 +226,12 @@ For Phoenix applications:
 def init(_key, config) do
   # Load app configuration
   {:ok, app_config} = Arca.Config.get("app")
-  
+
   # Override Phoenix config with values from Arca.Config
-  config = 
+  config =
     config
     |> Keyword.put(:http, [port: app_config["port"] || 4000])
-    
+
   {:ok, config}
 end
 ```
@@ -249,10 +251,10 @@ jobs:
         with:
           elixir-version: 1.14.x
           otp-version: 25.x
-      
+
       - name: Create config directory
         run: mkdir -p .arca
-        
+
       - name: Create config file
         run: |
           echo '{
@@ -262,7 +264,7 @@ jobs:
               "environment": "production"
             }
           }' > .arca/config.json
-          
+
       # Continue with build and deployment steps
 ```
 
@@ -298,7 +300,7 @@ CMD ["/app/bin/your_app", "start"]
 With Docker Compose:
 
 ```yaml
-version: '3'
+version: "3"
 services:
   app:
     build: .
@@ -314,7 +316,7 @@ services:
       - ./config:/app/config
     depends_on:
       - db
-  
+
   db:
     image: postgres:14
     environment:
@@ -323,6 +325,7 @@ services:
 ```
 
 This approach allows you to:
+
 - Set different configuration for different environments
 - Pass secrets and credentials securely through environment variables
 - Keep a common base configuration file but override specific values

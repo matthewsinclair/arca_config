@@ -50,7 +50,7 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     # REQUIRED: Set the config domain before starting supervision tree
     Application.put_env(:arca_config, :config_domain, :my_app)
-    
+
     children = [
       # Your supervisors and workers here
     ]
@@ -125,6 +125,7 @@ You can customize the configuration file location in the following ways (in orde
    - `MY_APP_CONFIG_FILE`: Filename derived from your app name
 
 3. Using application configuration:
+
    ```elixir
    config :arca_config,
      config_domain: :your_app_name,  # Override config domain detection
@@ -155,6 +156,7 @@ API_KEY=development_key_123
 ```
 
 The .env file is automatically loaded when you run:
+
 - `mix test`
 - `iex -S mix`
 - `mix run`

@@ -1,6 +1,7 @@
 ---
 verblock: "20250323:v1.0: Claude-assisted - Updated with Arca.Config reference information"
 ---
+
 # Arca.Config Reference Guide
 
 This reference guide provides comprehensive information about the Arca.Config library. Unlike the task-oriented User Guide, this reference guide serves as a complete reference for all aspects of the system.
@@ -312,7 +313,7 @@ Arca.Config.unregister_change_callback(callback_id)
 Configuration options can be controlled through environment variables:
 
 | Variable             | Purpose                              | Default     |
-|----------------------|--------------------------------------|-------------|
+| -------------------- | ------------------------------------ | ----------- |
 | ARCA_CONFIG_PATH     | Directory containing the config file | ~/.arca     |
 | ARCA_CONFIG_FILE     | Name of the config file              | config.json |
 | APP_NAME_CONFIG_PATH | App-specific config path override    | None        |
@@ -643,18 +644,18 @@ To upgrade projects using Arca.Config with Claude Code, you can use the prompt f
 
 ## Concepts and Terminology
 
-| Term | Definition |
-|------|------------|
-| Configuration | A set of key-value pairs that control application behavior |
-| JSON | JavaScript Object Notation, the file format used for configuration storage |
-| Dot Notation | Accessing nested configuration using period-separated paths (e.g., "database.host") |
-| Registry | Elixir's built-in key-value process registry used for subscriptions |
-| Subscription | A mechanism to receive notifications when specific configuration keys change |
-| Callback | A function called when configuration changes occur |
-| File Watcher | A process that monitors configuration files for external changes |
-| ETS | Erlang Term Storage, used for caching configuration values |
-| Asynchronous Writes | Background operations that don't block the server |
-| Token | A unique identifier for tracking write operations to avoid notification loops |
+| Term                | Definition                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| Configuration       | A set of key-value pairs that control application behavior                          |
+| JSON                | JavaScript Object Notation, the file format used for configuration storage          |
+| Dot Notation        | Accessing nested configuration using period-separated paths (e.g., "database.host") |
+| Registry            | Elixir's built-in key-value process registry used for subscriptions                 |
+| Subscription        | A mechanism to receive notifications when specific configuration keys change        |
+| Callback            | A function called when configuration changes occur                                  |
+| File Watcher        | A process that monitors configuration files for external changes                    |
+| ETS                 | Erlang Term Storage, used for caching configuration values                          |
+| Asynchronous Writes | Background operations that don't block the server                                   |
+| Token               | A unique identifier for tracking write operations to avoid notification loops       |
 
 ---
 

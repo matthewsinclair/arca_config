@@ -30,12 +30,10 @@ defmodule ArcaConfig.MixProject do
   defp deps do
     [
       {:ok, "~> 2.3"},
-      {:httpoison, "~> 2.1"},
       # {:optimus, "~> 0.5.0"},
       {:optimus, github: "matthewsinclair/arca-optimus", branch: "main", override: true},
       {:castore, "~> 1.0"},
       {:jason, "~> 1.4"},
-      {:tesla, "~> 1.15"},
       {:certifi, "~> 2.9"},
       {:ex_doc, "~> 0.29", only: :dev, runtime: false},
       {:owl, "~> 0.12"},

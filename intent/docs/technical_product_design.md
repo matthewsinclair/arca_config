@@ -266,30 +266,30 @@ Here's an example of how to use it in your Application module:
 ```elixir
 defmodule MyApp.Application do
   use Application
-  
+
   require Logger
-  
+
   @impl true
   def start(_type, _args) do
     # Initialize config before starting the rest of your application
     case initialize_config() do
       {:ok, config_path} ->
         Logger.info("Configuration initialized at: #{config_path}")
-        
+
         # Continue with your regular application startup
         children = [
           # Your supervisors and workers here
         ]
-        
+
         opts = [strategy: :one_for_one, name: MyApp.Supervisor]
         Supervisor.start_link(children, opts)
-        
+
       {:error, reason} ->
         Logger.error("Failed to initialize configuration: #{reason}")
         {:error, reason}
     end
   end
-  
+
   defp initialize_config do
     # Define your default configuration
     initial_config = %{
@@ -299,7 +299,7 @@ defmodule MyApp.Application do
       },
       # Other default settings
     }
-    
+
     # Initialize with your app name and defaults
     Arca.Config.InitHelper.init_config(:my_app, initial_config)
   end
@@ -313,7 +313,7 @@ If you want to use a standard location like `~/.myapp/config.json`, you can use 
 ```elixir
 defmodule MyApp.Application do
   use Application
-  
+
   @impl true
   def start(_type, _args) do
     # Set up default config in ~/.myapp/config.json
@@ -321,7 +321,7 @@ defmodule MyApp.Application do
       "initialized" => true,
       "created_at" => DateTime.utc_now() |> DateTime.to_iso8601()
     })
-    
+
     # Continue with application startup
     # ...
   end
@@ -358,6 +358,7 @@ APP_NAME_CONFIG_OVERRIDE_SECTION_KEY=value
 ```
 
 Where:
+
 - `APP_NAME` is your application name in uppercase
 - `SECTION_KEY` is the configuration path with dots replaced by underscores
 
@@ -410,6 +411,7 @@ Arca.Config.Cfg.config_pathname() # Returns "/tmp" with path expanded
 ### Path Expansion
 
 For non-environment variable paths (from application configuration or defaults), Arca.Config uses `Path.expand/1` to normalize paths, which:
+
 - Resolves relative paths against the current working directory
 - Expands `~` to the user's home directory
 - Removes trailing slashes for consistency

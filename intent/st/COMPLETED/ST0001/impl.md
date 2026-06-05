@@ -1,6 +1,7 @@
 ---
 verblock: "23 Mar 2025:v0.1: Claude - Implementation progress"
 ---
+
 # ST0001: Arca.Config Implementation Plan
 
 This document outlines the implementation plan and progress for modernizing Arca.Config to align with idiomatic, functional Elixir practices and integrate with the Elixir Registry for runtime configuration management.

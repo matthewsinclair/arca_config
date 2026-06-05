@@ -12,7 +12,6 @@ defmodule Arca.Config.FileWatcher do
   """
 
   use GenServer
-  require Logger
 
   # 5 seconds
   @check_interval 5_000

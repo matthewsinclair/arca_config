@@ -4,7 +4,7 @@ This is the primary tool-agnostic config file for AI coding agents working on th
 
 ## Project Overview
 
- -- an Intent project using the Steel Thread Process methodology.
+-- an Intent project using the Steel Thread Process methodology.
 
 ## Development Environment
 

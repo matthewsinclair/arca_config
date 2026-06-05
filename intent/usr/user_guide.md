@@ -1,6 +1,7 @@
 ---
 verblock: "20250323:v1.0: Claude-assisted - Updated with Arca.Config user guide"
 ---
+
 # Arca.Config User Guide
 
 This user guide provides task-oriented instructions for using the Arca.Config library. It explains how to accomplish common tasks and provides workflow guidance.
@@ -131,7 +132,7 @@ The typical workflow with Arca.Config is:
 ```elixir
 # Get a value with standard error handling
 case Arca.Config.get("database.host") do
-  {:ok, host} -> 
+  {:ok, host} ->
     # Use the host value
   {:error, reason} ->
     # Handle the error
@@ -157,7 +158,7 @@ end
 ```elixir
 # Update a value with standard error handling
 case Arca.Config.put("app.version", "1.1.0") do
-  {:ok, _} -> 
+  {:ok, _} ->
     # Handle success
   {:error, reason} ->
     # Handle error
@@ -234,12 +235,12 @@ Register callback functions to be called when any configuration changes:
 def start_link(opts) do
   # Start your process
   pid = GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-  
+
   # Register a callback for configuration changes
   Arca.Config.register_change_callback(__MODULE__, fn config ->
     GenServer.cast(__MODULE__, {:config_updated, config})
   end)
-  
+
   {:ok, pid}
 end
 
@@ -299,6 +300,7 @@ Values are applied at application startup and automatically saved to the configu
 - Temporarily overriding values for testing
 
 The environment variable overrides use smart type conversion:
+
 - Strings like "true" and "false" become booleans
 - Numeric strings become integers or floats
 - JSON-formatted strings are parsed into maps or lists

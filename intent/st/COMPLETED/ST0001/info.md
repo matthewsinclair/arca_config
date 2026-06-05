@@ -5,6 +5,7 @@ status: Completed
 created: 20250322
 completed: 20250323
 ---
+
 # ST0001: Reconciling Arca.Config with Elixir Registry
 
 ## Overview
@@ -19,12 +20,7 @@ Arca.Config needed to meet these requirements:
 2. Allow an app to easily write back config changes that persist to the config file and are available on subsequent app invocations.
 3. Provide an easy-to-use lookup mechanism to access configuration data via a simple API.
 
-Additionally, we wanted to:
-4. Detect changes to configuration files made externally and reload appropriately
-5. Provide notifications when configuration changes through a subscription system
-6. Allow components to register callbacks to react to configuration changes
-7. Support asynchronous file operations to avoid blocking
-8. Prevent notification loops when the application itself changes the config
+Additionally, we wanted to: 4. Detect changes to configuration files made externally and reload appropriately 5. Provide notifications when configuration changes through a subscription system 6. Allow components to register callbacks to react to configuration changes 7. Support asynchronous file operations to avoid blocking 8. Prevent notification loops when the application itself changes the config
 
 ## Implementation Summary
 

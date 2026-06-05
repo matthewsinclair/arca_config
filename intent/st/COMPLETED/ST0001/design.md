@@ -1,6 +1,7 @@
 ---
 verblock: "23 Mar 2025:v0.1: Claude - Initial analysis document"
 ---
+
 # ST0001: Arca.Config Analysis
 
 ## Current Implementation Overview
