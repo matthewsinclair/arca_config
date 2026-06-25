@@ -1,5 +1,5 @@
 {
-  "intent_version": "2.10.0",
+  "intent_version": "2.13.0",
   "intent_dir": "intent",
   "plugins": {
     "claude": {
@@ -8,5 +8,9 @@
     "agents": {
       "config_path": "intent/plugins/agents"
     }
-  }
+  },
+  "languages": [
+    "shell",
+    "elixir"
+  ]
 }

@@ -27,6 +27,12 @@ Per-language rule packs available in canon: `elixir`, `rust`, `swift`, `lua`, `s
 - NEVER bypass coordinator/business-logic separation (Thin Coordinator).
 - NEVER manually wrap lines in markdown files.
 
+## Language Packs
+
+<!-- intent-lang-packs:start -->
+- **elixir** -- rule pack at `intent/plugins/claude/rules/elixir/`; concretised RULES at `intent/llm/RULES-elixir.md`.
+<!-- intent-lang-packs:end -->
+
 ## Project-Specific Rules
 
 <!-- Add rules unique to this project below this line. Cite IN-* IDs where applicable. -->
