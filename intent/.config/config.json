@@ -1,5 +1,5 @@
 {
-  "intent_version": "2.13.0",
+  "intent_version": "2.18.0",
   "intent_dir": "intent",
   "plugins": {
     "claude": {

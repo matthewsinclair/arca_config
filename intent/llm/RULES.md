@@ -30,7 +30,8 @@ Per-language rule packs available in canon: `elixir`, `rust`, `swift`, `lua`, `s
 ## Language Packs
 
 <!-- intent-lang-packs:start -->
-- **elixir** -- rule pack at `intent/plugins/claude/rules/elixir/`; concretised RULES at `intent/llm/RULES-elixir.md`.
+- **elixir** -- rules via `intent claude rules list --lang elixir` (served by the installed Intent tool, not vendored into this project); concretised RULES at `intent/llm/RULES-elixir.md`.
+- **shell** -- rules via `intent claude rules list --lang shell` (served by the installed Intent tool, not vendored into this project); concretised RULES at `intent/llm/RULES-shell.md`.
 <!-- intent-lang-packs:end -->
 
 ## Project-Specific Rules
