@@ -149,10 +149,17 @@ defmodule Arca.Config.ConsumerContractTest do
     # starts rendering as "cannot read setting X: {:config, :not_found, [...]}".
     # That is a degradation, not a crash -- and when WP-02 lands it, this test
     # must be changed deliberately and recorded in impl.md's changed-tests ledger.
-    test "a missing key is reported in the dialect arca_cli classifies as not-found" do
+    test "a missing key is the canonical shape, and arca_cli 0.5.0 will not classify it" do
       assert {:error, reason} = Arca.Config.get("no.such.key")
-      assert reason == "Key not found"
-      assert String.downcase(reason) =~ "not found"
+      assert reason == {:config, :not_found, ["no", "such", "key"]}
+
+      # arca_cli 0.5.0's three clauses, replicated. The first two are the ones
+      # that render "setting not found"; the canonical shape matches neither,
+      # so a missing setting renders through the generic clause until arca_cli
+      # gains a clause for it in WP-06. This assertion IS the migration debt --
+      # when the rebuild lands, it should flip to the accepting branch.
+      refute reason == :not_found
+      refute is_binary(reason)
     end
   end
 end

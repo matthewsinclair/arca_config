@@ -364,7 +364,11 @@ defmodule Arca.Config.ServerTest do
     test "put returns error and preserves state on unwritable location", %{test_file: test_file} do
       on_disk_before = File.read!(test_file)
 
-      log = capture_log(fn -> assert {:error, :eacces} = Server.put("app.name", "PhantomApp") end)
+      log =
+        capture_log(fn ->
+          assert {:error, {:config, :write_failed, :eacces}} =
+                   Server.put("app.name", "PhantomApp")
+        end)
 
       assert log =~ "Failed to write config file"
       assert File.read!(test_file) == on_disk_before
@@ -376,7 +380,10 @@ defmodule Arca.Config.ServerTest do
     } do
       on_disk_before = File.read!(test_file)
 
-      log = capture_log(fn -> assert {:error, :eacces} = Server.delete("app.name") end)
+      log =
+        capture_log(fn ->
+          assert {:error, {:config, :write_failed, :eacces}} = Server.delete("app.name")
+        end)
 
       assert log =~ "Failed to write config file"
       assert File.read!(test_file) == on_disk_before
@@ -409,10 +416,9 @@ defmodule Arca.Config.ServerTest do
     end
 
     test "failed load surfaces as load error not key-miss" do
-      assert {:error, reason} = Server.get("app.name")
+      assert {:error, {:config, :load_failed, detail}} = Server.get("app.name")
 
-      assert reason =~ "Error parsing config"
-      refute reason == "Key not found"
+      assert detail =~ "Error parsing config"
     end
   end
 

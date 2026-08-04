@@ -160,7 +160,8 @@ defmodule Arca.Config.PhaseBasedTest do
 
     log =
       capture_log(fn ->
-        assert {:error, {:env_overrides_failed, [{"database.port", :eacces}]}} =
+        assert {:error,
+                {:env_overrides_failed, [{"database.port", {:config, :write_failed, :eacces}}]}} =
                  Arca.Config.load_config_phase()
       end)
 

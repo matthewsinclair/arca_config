@@ -14,6 +14,7 @@ defmodule Arca.Config.Server do
 
   alias Arca.Config.Cache
   alias Arca.Config.Cfg
+  alias Arca.Config.Error
 
   # Client API
 
@@ -82,7 +83,7 @@ defmodule Arca.Config.Server do
         value
 
       {:error, reason} ->
-        raise RuntimeError, message: "Configuration error: #{format_reason(reason)}"
+        raise RuntimeError, message: "Configuration error: #{Error.message(reason)}"
     end
   end
 
@@ -123,7 +124,7 @@ defmodule Arca.Config.Server do
         result
 
       {:error, reason} ->
-        raise RuntimeError, message: "Configuration error: #{format_reason(reason)}"
+        raise RuntimeError, message: "Configuration error: #{Error.message(reason)}"
     end
   end
 
@@ -162,15 +163,9 @@ defmodule Arca.Config.Server do
         result
 
       {:error, reason} ->
-        raise RuntimeError, message: "Configuration error: #{format_reason(reason)}"
+        raise RuntimeError, message: "Configuration error: #{Error.message(reason)}"
     end
   end
-
-  # Error reasons are still a mixed dialect (WP-02 / ruling R1 unifies them).
-  # Binaries pass through so existing message text is unchanged; anything else
-  # is inspected, so a raise can never itself fail on the reason it reports.
-  defp format_reason(reason) when is_binary(reason), do: reason
-  defp format_reason(reason), do: inspect(reason)
 
   @doc """
   Reloads the configuration from disk.
@@ -640,18 +635,23 @@ defmodule Arca.Config.Server do
     |> String.split(".")
   end
 
+  # `asked_for` is the whole key path the caller used, carried down the recursion
+  # so a failure can report the key that was actually asked for rather than
+  # whichever suffix the walk happened to stop on.
+  defp get_in_nested(config, key_path), do: get_in_nested(config, key_path, key_path)
+
   # Base case: reached leaf value successfully
-  defp get_in_nested(result, []), do: {:ok, result}
+  defp get_in_nested(result, [], _asked_for), do: {:ok, result}
 
   # Error case: current position is not a map but we need to go deeper
-  defp get_in_nested(current, [_head | _tail]) when not is_map(current),
-    do: {:error, "Key not found"}
+  defp get_in_nested(current, [_head | _tail], asked_for) when not is_map(current),
+    do: Error.not_found(asked_for)
 
   # Recursive case: get value at current key and continue
-  defp get_in_nested(config, [head | tail]) do
+  defp get_in_nested(config, [head | tail], asked_for) do
     case Map.get(config, head) do
-      nil -> {:error, "Key not found"}
-      value -> get_in_nested(value, tail)
+      nil -> Error.not_found(asked_for)
+      value -> get_in_nested(value, tail, asked_for)
     end
   end
 
@@ -732,9 +732,9 @@ defmodule Arca.Config.Server do
          :ok <- File.write(expanded_config_path, encoded_config) do
       :ok
     else
-      {:error, reason} = error ->
+      {:error, reason} ->
         Logger.error("Failed to write config file #{expanded_config_path}: #{inspect(reason)}")
-        error
+        Error.write_failed(reason)
     end
   end
 

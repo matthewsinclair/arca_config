@@ -269,7 +269,7 @@ defmodule Arca.Config.Cfg.Test do
       System.put_env(app_specific_path_var, "/nonexistent/path/")
       System.put_env(app_specific_file_var, "nonexistent.json")
 
-      assert {:error, "Failed to load config file: enoent"} = Cfg.load()
+      assert {:error, {:config, :load_failed, :enoent}} = Cfg.load()
       assert {:ok, %{}} == Cfg.load(nil, bootstrap: true)
 
       # Clean up
@@ -291,8 +291,8 @@ defmodule Arca.Config.Cfg.Test do
       System.put_env(app_specific_file_var, "malformed.json")
 
       # Check that we properly fail on malformed JSON
-      assert {:error, reason} = Cfg.load()
-      assert reason =~ "Error parsing config"
+      assert {:error, {:config, :load_failed, detail}} = Cfg.load()
+      assert detail =~ "Error parsing config"
 
       # Clean up
       System.delete_env(app_specific_path_var)

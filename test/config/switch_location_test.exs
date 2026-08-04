@@ -235,7 +235,7 @@ defmodule Arca.Config.SwitchLocationTest do
                  file: "config.json"
                )
 
-      assert reason =~ "enoent"
+      assert reason == {:config, :load_failed, :enoent}
 
       # The previous location stays live: config, cache and env vars all intact.
       assert {:ok, "one"} = Config.get("location")

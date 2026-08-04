@@ -14,10 +14,10 @@
 - [x] vc node found + inbox read (3 entries, unread all session -- node postdated pickup); replied 16:40
 - [x] Post-ratification corrections: AC-05.1 withdrawn/rewritten per hv's dep ruling; AF-40 + AC-04.7 added from vc's config/.env lead; AF-15 extended with `ansi_enabled:`
 - [x] hv: approve AC-00.4 (2026-08-04) -- accepted; contract is 38. AT-00.1 (consumer contract test) is now live work
-- [ ] vc: concur on the R1 error shape before WP-02 lands (handover-to-vc.md, Ask 1)
+- [x] R1 error shape (2026-08-04) -- hv delegated the wire format to cc ("pick a sensible one"): `{:error, {:config, reason, detail}}`, arca_config first. vc still has it to verify, but it no longer blocks
 - [x] WP-01 Truthful returns (AR-1) -- landed 2026-08-04, gate PASS 6/6; suite 134 green (was 128), deterministic across 8 seeds
 - [x] AT-00.1 consumer contract test (AC-00.4) + AC-02.3 facade completion -- landed 2026-08-04; suite 167 green, 5 seeds
-- [ ] WP-02 One lookup path, one dialect, complete facade (AR-2) -- WIP. AC-02.1/.3/.4/.5 landed 2026-08-04 (suite 172 green, 6 seeds); **AC-02.2 alone remains**, waiting on the R1 wire format with vc
+- [x] WP-02 One lookup path, one dialect, complete facade (AR-2) -- DONE 2026-08-04, all five ACs green; suite 200 green, 6 seeds
 - [x] WP-03 Notification and watcher coherence (AR-3) -- landed 2026-08-04, gate PASS 6/6; suite 147 green, 8 seeds
 - [x] hv: ratify the notification matrix in design.md (2026-08-04) -- ratified as implemented, both rules included; AC-03.1 satisfied in full
 - [x] WP-04 Location model (AR-4) -- landed 2026-08-04, gate PASS 7/7; suite 152 green, 7 seeds, isolation guard armed

@@ -56,6 +56,7 @@ defmodule Arca.Config.Cfg do
   - The config domain is checked on every access to ensure consistency
   """
 
+  alias Arca.Config.Error
   alias Arca.Config.Server
 
   @doc """
@@ -121,8 +122,7 @@ defmodule Arca.Config.Cfg do
   # successful load of nothing.
   defp handle_file_read_result({:error, :enoent}, true), do: {:ok, %{}}
 
-  defp handle_file_read_result({:error, reason}, _bootstrap),
-    do: {:error, "Failed to load config file: #{reason}"}
+  defp handle_file_read_result({:error, reason}, _bootstrap), do: Error.load_failed(reason)
 
   defp normalize_content(""), do: "{}"
   defp normalize_content(content), do: content
@@ -130,7 +130,7 @@ defmodule Arca.Config.Cfg do
   defp handle_decode_result({:ok, result}), do: {:ok, result}
 
   defp handle_decode_result({:error, %{position: position, token: token}}) do
-    {:error, "Error parsing config at position: #{position}, token: '#{token}'"}
+    Error.load_failed("Error parsing config at position: #{position}, token: '#{token}'")
   end
 
   @doc """
@@ -372,7 +372,7 @@ defmodule Arca.Config.Cfg do
          value when not is_nil(value) <- Map.get(config, name) do
       {:ok, value}
     else
-      nil -> {:error, "No such property: #{inspect(name)}"}
+      nil -> Error.not_found([to_string(name)])
       {:error, reason} -> {:error, reason}
     end
   end

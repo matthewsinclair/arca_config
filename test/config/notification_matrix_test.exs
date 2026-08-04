@@ -223,7 +223,10 @@ defmodule Arca.Config.NotificationMatrixTest do
     File.chmod!(test_file, 0o444)
     on_exit(fn -> File.chmod(test_file, 0o644) end)
 
-    capture_log(fn -> assert {:error, :eacces} = Server.put("database.host", "never-lands") end)
+    capture_log(fn ->
+      assert {:error, {:config, :write_failed, :eacces}} =
+               Server.put("database.host", "never-lands")
+    end)
 
     refute_receive {:config_updated, _, _}, 200
     refute_receive {:cb1, _}, 100

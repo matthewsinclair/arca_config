@@ -3,7 +3,7 @@ verblock: "04 Aug 2026:v0.1: matts - Initial version"
 wp_id: WP-02
 title: "One lookup path, one dialect, complete facade"
 scope: Small
-status: WIP
+status: Done
 ---
 
 # WP-02: One lookup path, one dialect, complete facade
