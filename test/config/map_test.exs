@@ -68,7 +68,7 @@ defmodule Arca.Config.MapTest do
       File.rm_rf!(test_dir)
     end)
 
-    {:ok, %{config: ConfigMap.new()}}
+    {:ok, %{config: ConfigMap.new(), test_file: test_file}}
   end
 
   describe "get/3" do
@@ -109,24 +109,24 @@ defmodule Arca.Config.MapTest do
 
     test "returns the same struct", %{config: config} do
       new_config = ConfigMap.put(config, "app.name", "NewApp")
-      assert %ConfigMap{} = new_config
+      assert new_config == config
     end
 
-    test "raises on error" do
-      # Force an error by making the config file non-writable
-      # This is a bit tricky to test, so we'll mock the Server.put to return an error
-      # No need to call Code.ensure_loaded as Server is already aliased
+    # Was a `:meck` mock of `Server.put/2` returning `{:error, "Test error"}`,
+    # on the stated grounds that a real write failure was "a bit tricky to test".
+    # It is two lines, and the rest of the suite already does it this way. The
+    # mock also hid a real defect: it returned a *binary* reason, so it kept
+    # passing when AC-02.2 changed reasons to tuples and this raise started
+    # failing with Protocol.UndefinedError instead of the message it promises.
+    test "raises with the rendered reason when the write fails", %{test_file: test_file} do
+      File.chmod!(test_file, 0o444)
+      on_exit(fn -> File.chmod(test_file, 0o644) end)
 
-      try do
-        :meck.new(Server, [:passthrough])
-        :meck.expect(Server, :put, fn _, _ -> {:error, "Test error"} end)
-
-        assert_raise RuntimeError, fn ->
-          ConfigMap.put(ConfigMap.new(), "test", "value")
-        end
-      after
-        :meck.unload(Server)
-      end
+      assert_raise RuntimeError,
+                   ~r/Failed to put config: failed to write configuration: eacces/,
+                   fn ->
+                     ConfigMap.put(ConfigMap.new(), "app.name", "never-lands")
+                   end
     end
   end
 

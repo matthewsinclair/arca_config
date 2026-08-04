@@ -39,7 +39,6 @@ defmodule ArcaConfig.MixProject do
       {:pathex, "~> 2.6"},
       {:table_rex, "~> 4.1"},
       {:elixir_uuid, "~> 1.2"},
-      {:meck, "~> 1.0", only: :test},
       {:dotenv, "~> 3.0", only: [:dev, :test], runtime: false}
     ]
   end

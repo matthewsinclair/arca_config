@@ -188,11 +188,11 @@ defmodule Arca.Config.AutoConfigTest do
     # Ensure we have a proper environment
     ensure_config_processes()
 
-    # Force a reload of the config
+    # `reload/0` is a GenServer call that rebuilds the cache before it replies,
+    # so the cache is already current when this returns. This used to be
+    # followed by a 100ms sleep "to make sure cache gets updated" -- the last
+    # wall-clock synchronisation in the suite (IN-EX-TEST-002).
     {:ok, _} = Arca.Config.Server.reload()
-
-    # Short sleep to make sure cache gets updated
-    :timer.sleep(100)
 
     # Verify the config was updated in the file
     config_content = File.read!(config_file)

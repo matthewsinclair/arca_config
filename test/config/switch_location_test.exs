@@ -355,26 +355,26 @@ defmodule Arca.Config.SwitchLocationTest do
     end
   end
 
-  # Helper to ensure processes are started
+  # Every process this module needs, started the one way. Three of these were
+  # `try do Registry.start_link(...) rescue _ -> :ok end` -- the same
+  # rescue-fabricates-success defect this thread removed from `Cache` (see
+  # `cache.ex`), surviving in a test file. `Registry.start_link/1` on an
+  # already-registered name *returns* `{:error, {:already_started, pid}}`; it
+  # does not raise, so the rescue never fired for the case it claimed to cover,
+  # and when the start did succeed it linked the registry to the test process
+  # instead of the test supervisor.
   defp start_processes do
-    # Start registry if not running
-    try do
-      Registry.start_link(keys: :duplicate, name: Arca.Config.Registry)
-    rescue
-      _ -> :ok
-    end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.Registry}
+    )
 
-    try do
-      Registry.start_link(keys: :duplicate, name: Arca.Config.CallbackRegistry)
-    rescue
-      _ -> :ok
-    end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.CallbackRegistry}
+    )
 
-    try do
-      Registry.start_link(keys: :duplicate, name: Arca.Config.SimpleCallbackRegistry)
-    rescue
-      _ -> :ok
-    end
+    Arca.Config.Test.Support.ensure_started(
+      {Registry, keys: :duplicate, name: Arca.Config.SimpleCallbackRegistry}
+    )
 
     Arca.Config.Test.Support.ensure_started(Arca.Config.Cache)
     Arca.Config.Test.Support.ensure_started(Arca.Config.Server)

@@ -47,7 +47,7 @@ defmodule Arca.Config.CLITest do
       File.rm_rf!(test_dir)
     end)
 
-    :ok
+    {:ok, %{test_file: Path.join(test_dir, "config.json")}}
   end
 
   test "get reaches the Optimus spec and prints the value" do
@@ -92,6 +92,30 @@ defmodule Arca.Config.CLITest do
     output = capture_io(fn -> CLI.main(["get", "app.ports"]) end)
 
     assert {:ok, [4000, 4001]} = Jason.decode(output)
+  end
+
+  # These three would have caught the defect AC-02.2 shipped: every CLI failure
+  # path interpolated the raw reason into a string, and once reasons became
+  # tuples that raised Protocol.UndefinedError instead of printing anything. No
+  # test exercised a CLI error path, so the suite stayed green through it.
+  test "get reports a missing key instead of raising on the reason" do
+    assert capture_io(fn -> CLI.main(["get", "no.such.key"]) end) =~
+             "Error: key not found: no.such.key"
+  end
+
+  test "set reports a write failure instead of raising on the reason", %{test_file: test_file} do
+    File.chmod!(test_file, 0o444)
+    on_exit(fn -> File.chmod(test_file, 0o644) end)
+
+    assert capture_io(fn -> CLI.main(["set", "app.name", "never-lands"]) end) =~
+             "Error: failed to write configuration: eacces"
+  end
+
+  test "list reports a load failure instead of raising on the reason", %{test_file: test_file} do
+    File.write!(test_file, "{not valid json")
+
+    assert capture_io(fn -> CLI.main(["list"]) end) =~
+             "Error: failed to load configuration: Error parsing config"
   end
 
   test "an unrecognised command reports itself instead of failing silently" do

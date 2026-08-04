@@ -15,6 +15,7 @@ defmodule Arca.Config.CLI do
   while the mix task, which is the documented path, stays.
   """
 
+  alias Arca.Config.Error
   alias Arca.Config.Server
   alias Arca.Config.Value
 
@@ -121,7 +122,7 @@ defmodule Arca.Config.CLI do
   defp handle_get(key) do
     case Arca.Config.get(key) do
       {:ok, value} -> print_value(value)
-      {:error, reason} -> IO.puts("Error: #{reason}")
+      {:error, reason} -> IO.puts("Error: #{Error.message(reason)}")
     end
   end
 
@@ -130,14 +131,14 @@ defmodule Arca.Config.CLI do
 
     case Arca.Config.put(key, converted) do
       {:ok, _} -> IO.puts("Successfully set '#{key}' to '#{inspect(converted)}'")
-      {:error, reason} -> IO.puts("Error: #{reason}")
+      {:error, reason} -> IO.puts("Error: #{Error.message(reason)}")
     end
   end
 
   defp handle_list do
     case Server.reload() do
       {:ok, config} -> IO.puts(Jason.encode!(config, pretty: true))
-      {:error, reason} -> IO.puts("Error: #{reason}")
+      {:error, reason} -> IO.puts("Error: #{Error.message(reason)}")
     end
   end
 

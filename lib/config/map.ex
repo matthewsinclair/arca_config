@@ -13,6 +13,7 @@ defmodule Arca.Config.Map do
       Arca.Config.Map.get_in(config, [:database, :host])
   """
 
+  alias Arca.Config.Error
   alias Arca.Config.Server
 
   defstruct []
@@ -83,8 +84,11 @@ defmodule Arca.Config.Map do
   @spec put(t(), any(), any()) :: t()
   def put(%__MODULE__{} = config, key, value) do
     case Server.put(key, value) do
-      {:ok, _} -> config
-      {:error, reason} -> raise RuntimeError, message: "Failed to put config: #{reason}"
+      {:ok, _} ->
+        config
+
+      {:error, reason} ->
+        raise RuntimeError, message: "Failed to put config: #{Error.message(reason)}"
     end
   end
 
@@ -102,8 +106,11 @@ defmodule Arca.Config.Map do
   @spec put_in(t(), [any()], any()) :: t()
   def put_in(%__MODULE__{} = config, keys, value) do
     case Server.put(keys, value) do
-      {:ok, _} -> config
-      {:error, reason} -> raise RuntimeError, message: "Failed to put config: #{reason}"
+      {:ok, _} ->
+        config
+
+      {:error, reason} ->
+        raise RuntimeError, message: "Failed to put config: #{Error.message(reason)}"
     end
   end
 
@@ -174,7 +181,7 @@ defmodule Arca.Config.Map do
         {current_value, config}
 
       {:error, reason} ->
-        raise RuntimeError, message: "Failed to delete config: #{inspect(reason)}"
+        raise RuntimeError, message: "Failed to delete config: #{Error.message(reason)}"
     end
   end
 end

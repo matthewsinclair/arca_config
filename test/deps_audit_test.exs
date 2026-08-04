@@ -29,17 +29,25 @@ defmodule Arca.Config.DepsAuditTest do
     elixir_uuid:
       "no in-repo call site -- kept per AC-05.1 default-KEEP, pending downstream evidence",
     ex_doc: "dev only: documentation build",
-    meck: "test only: one remaining use, map_test.exs forcing a put failure",
     dotenv: "dev and test only, runtime: false -- declared; config/dotenv.exs hand-parses .env"
   }
 
   # Read the declared set from mix.exs textually. Evaluating mix.exs inside the
   # suite would re-define the project module, so the source is the one place
   # this looks.
+  #
+  # Scoped to the body of `deps/0` and not the whole file, and the name pattern
+  # allows digits. Before both fixes this scanned every `{:atom,` in mix.exs --
+  # so a future `{:ok, ...}` in a helper would have counted as a declared
+  # dependency -- and `[a-z_]+` silently skipped anything like `{:oauth2, ...}`,
+  # which is exactly the addition this test exists to catch.
   defp declared_deps do
-    "mix.exs"
-    |> File.read!()
-    |> then(&Regex.scan(~r/\{:([a-z_]+),/, &1))
+    source = File.read!("mix.exs")
+    [_before, deps_body] = String.split(source, "defp deps do", parts: 2)
+    [deps_body, _after] = String.split(deps_body, "\n  end", parts: 2)
+
+    ~r/\{:([a-z][a-z0-9_]*),/
+    |> Regex.scan(deps_body)
     |> Enum.map(fn [_full, name] -> String.to_atom(name) end)
     |> MapSet.new()
   end
