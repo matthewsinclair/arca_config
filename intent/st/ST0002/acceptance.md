@@ -28,7 +28,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 - AC-00.1 (non-test) No public symbol is retired without the sibling-fleet probe (`function_exported?` / `Code.ensure_loaded?` / direct refs) re-run at removal time and recorded -- the `register_change_callback/2` tripwire (arca_cli liveness proxy) survives or arca_cli is migrated first -- evidence: impl.md removal log + vc ack -- satisfied: no
 - AC-00.2 (non-test) arca_cli rebuilt against the final arca_config (mix.lock advanced from 8b30615) and its full suite passes, executed by vc -- evidence: vc report -- satisfied: no
-- AC-00.3 (non-test) Every test changed because it asserted a defect is listed in impl.md's changed-tests ledger with before/after behaviour -- evidence: impl.md ledger -- satisfied: no
+- AC-00.3 (non-test) Every test changed because it asserted a defect is listed in impl.md's changed-tests ledger with before/after behaviour -- evidence: impl.md changed-tests ledger, 10 rows as at 2026-08-04, covering WP-01 (7), WP-02 (3) and WP-05 (2); re-checked at ST close because AC-02.2 will add rows -- satisfied: yes
 - AC-00.4 (RATIFIED by hv 2026-08-04 -- scope addition accepted, contract is 38) What downstream relies on arca_config for is identified and pinned by tests **here**, so the consumer contract is enforced rather than assumed. Arises from hv's ruling on the dependency retraction: in-repo silence over public surface signals untested contract surface, and the remedy is coverage, not deletion. Covered by AT-00.1
 
 ### WP-01 -- Truthful returns (status: DONE 2026-08-04, all six ATs green)

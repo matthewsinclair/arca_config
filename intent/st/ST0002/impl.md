@@ -32,7 +32,7 @@ Deferred, deliberately: the write token is registered before the write and stays
 
 Twelve ATs red first (ten in a new `notification_matrix_test.exs`, plus the two watcher ones), each failing for its ledger defect -- including the watcher's `MatchError` on a hand-broken file and the stale ancestor map from probe P2. After: **147 passed (41 doctests, 106 tests)**, deterministic across eight seeds, compile clean, dots-only output, tree unchanged by a run.
 
-The matrix is in design.md and is the substance of this WP; it still needs hv's explicit yes. As-built by finding:
+The matrix is in design.md and is the substance of this WP; hv ratified it on 2026-08-04, both rules included. As-built by finding:
 
 - **AF-17** one notification path for all five mutation events, replacing three divergent ones. Per-key subscribers are computed by diffing the value at each *subscribed* path rather than walking the written path's ancestors -- cheaper when nobody listens, and it reaches the subscriber whose value changed because an ancestor was replaced, which the ancestor walk could not see. 1-arity callbacks now fire on every path, not only external. The 0-arity double-fire is gone: the watcher no longer calls `reload` **and** `notify_external_change`; the reload is the event.
 - **AF-18** the watcher's `{:ok, _} = Server.reload()` is now a `case` that logs a parse failure, keeps the last good config, and keeps watching. One malformed hand-edit used to raise a MatchError and restart it into permanent silent dormancy with no timer.
@@ -166,9 +166,15 @@ Test-output discipline (hv, 2026-08-04): suite output is dots only. The `Logger.
 
 Per AC-00.1: each retired public symbol gets a row with the fleet-probe evidence re-run at removal time.
 
-| Symbol                                | Probe result | vc ack |
-| ------------------------------------- | ------------ | ------ |
-| (none yet)                            |              |        |
+| Symbol                                                    | Probe result                                                                                                                  | vc ack  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **No public symbol has been retired** through WP-01/02/03/04/05 | n/a -- nothing to probe                                                                                                    | pending |
+| `Arca.Config.main/1` (WP-05)                              | KEPT as a delegate to `Arca.Config.CLI.main/1` rather than retired, precisely so the fleet probe is not needed                | n/a     |
+| `Cfg.get/1`, `get!/1`, `put/2`, `put!/2` (WP-02)          | KEPT as delegates to `Server` rather than retired: public, documented, doctested surface with no in-repo callers is untested contract surface, not dead surface | n/a |
+| `escript:` build target (WP-05, R3)                       | Not a module symbol. Fleet grep for `arca_config get\|set\|list\|watch` and `Arca.Config.main` across arca_cli, arca_id, arca_dbutils, arca_notionex, arca_doc: **zero hits**. The mix task, which is the documented path, is retained | pending |
+| `{:reset_for_test, config}`, `{:reset_to_dormant, pid}` (WP-05) | Internal GenServer messages, not public API. `reset_for_test` had zero callers anywhere; `reset_to_dormant` had two, both in this repo's own test suite, migrated to `FileWatcher.stop_watching/0` | n/a |
+
+The deletions this thread has made are of **private** functions (`Cfg.update_nested_config/3`, `Cfg.write_config/2`, `Server.write_file_with_logging/2`, `Server.get_notification_paths/2,3`, `Server.add_path_if_exists/3`, `Server.build_cache/1`), unreachable clauses, and repository files. Every public symbol is still exported.
 
 ## Technical Details
 

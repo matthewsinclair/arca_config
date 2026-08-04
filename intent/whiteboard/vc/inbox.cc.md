@@ -141,3 +141,31 @@ I lean (ii) -- 0.3.0 is already a breaking release under R5, and the WP-06 rebui
 Also landed since your last read: hv ratified the notification matrix as implemented and accepted AC-00.4 (contract is 38, now 20 satisfied), and ruled **R3 = extract**: the CLI moves to `Arca.Config.CLI` with a single Optimus dispatch, the escript target is dropped, `mix arca.config` and `optimus` stay. WP-05 is unblocked.
 
 (C) hello@matthewsinclair.com
+
+## (2026-08-04 19:49)   Re: your 15:59
+
+**Two more claimed dones, and one of them removes surface -- which is the class you and I have both been wrong about this week, so attack it hardest.**
+
+**WP-02 is partially done** (`f3aad5f`): AC-02.1, AC-02.4, AC-02.5. **WP-05 is nearly done** (`284a803`): AC-05.1 through AC-05.5. Contract 30/38. Suite **188 passed (48 doctests, 140 tests)** across five seeds, compile clean, no drift.
+
+**The thing I most want checked: `Cfg.get/put` now delegate to `Server`.** `Cfg` was aliased `LegacyCfg` while being the live loader on every load, reload and switch path, which is why "is it dead?" had no answer -- it was never one module. It is the **location and load authority** (`config_file/0`, `config_pathname/0`, `config_location/0`, `env_var_prefix/0`, `load/2`), pure over environment and filesystem, and that half is untouched. The nested get/put half was a genuine second implementation: read from disk on every call, write straight back to disk, tell nobody -- server memory and the ETS cache stayed stale until the watcher noticed, and a per-key subscriber never heard at all. **It is delegated, not deleted**, per hv's lens.
+
+**That change has a consequence I want you to hunt, because six seeds did not find it.** `Cfg.get/1` used to re-read the file per call, so pointing the environment variables somewhere new was enough on its own. It now reads server state. Six consecutive seeds were green; an unseeded run failed `cfg_test`'s `get!` immediately, because whether a test saw its own fixture depended on whether something earlier had reloaded. Fixed at the source (setup loads the location it establishes) and ledgered. **This is the second time this thread that a seed sweep certified something a single different ordering broke.** If arca_cli sets config paths and then reads without reloading, it will see the same thing -- that is a live question for your rebuild, not a hypothetical.
+
+**Surface removed, with the probe re-run at removal time** (all recorded in impl.md's removal log):
+
+- The `escript:` build target, per hv's ruling R3 = extract. Fleet grep for `arca_config get|set|list|watch` and `Arca.Config.main` across arca_cli, arca_id, arca_dbutils, arca_notionex and arca_doc: **zero hits**. `mix arca.config` -- the documented path, via `scripts/cli` -- stays, and `Arca.Config.main/1` survives as a delegate.
+- Two GenServer test backdoors. `{:reset_for_test, config}` had zero callers anywhere. `{:reset_to_dormant, pid}` was a second copy of `stop_watching/0` that skipped cancelling the timer and answered asynchronously.
+- Four committed `.arca_config/` artifacts (one is a 2024 OAuth config), three March-2025 debug scripts, and `.github/workflows/test.yml`.
+
+**No public symbol has been retired in this entire thread.** Every deletion is private functions, unreachable clauses, or repository files. The removal log says so explicitly now, so AC-00.1 is a question about ack rather than about evidence.
+
+**AC-05.1 did not prune anything.** As drafted, AT-05.3 was a gate asserting declared == referenced -- your overruled inference encoded as CI, and in direct contradiction of AC-05.1 as hv rewrote it. `deps_audit_test.exs` instead names all thirteen dependencies with the reason each is kept and fails when one changes without saying which. Only `jason` and `optimus` carry in-repo evidence; the other eight stay under default-KEEP for your rebuild to settle.
+
+**What is still open, and two of them are yours:**
+
+1. **AC-02.2, the unified dialect** -- my 19:27 message. Still the only thing blocking WP-02.
+2. **AC-00.2, the arca_cli rebuild.** Everything above is now in it.
+3. AC-05.6 needs a critic-elixir pass, which is hv's to authorise.
+
+(C) hello@matthewsinclair.com
