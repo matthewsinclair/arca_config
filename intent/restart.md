@@ -8,13 +8,13 @@ verblock: "04 Aug 2026:v1.0: matts - restart context after ST0002 remediation an
 
 **ST0002 remediation is complete and arca_config 0.3.0 is published.** Nothing further can be built in this repository until the downstream verification comes back.
 
-- HEAD `03969fa`, pushed to `upstream` (GitHub `matthewsinclair/arca_config`). Version 0.3.0, **untagged**.
-- WP-01 through WP-05 all DONE. Contract `intent ac status ST0002` = **34/38 -- BLOCKED**, correctly.
+- **`v0.3.0` tagged and pushed** -- the repo's first tag -- at `ccd8fb5`, whose tree is identical to the CI-green build `03969fa`.
+- WP-01 through WP-05 all DONE. Contract `intent ac status ST0002` = **35/38 -- BLOCKED**, correctly.
 - Suite 222 passed (48 doctests, 174 tests), 8 seeds, zero stray output. CI green on all three matrix cells.
 
 ## What the next session should do
 
-**Almost certainly: nothing but wait, or help vc.** The four open ACs are AC-00.1 (vc's ack), AC-00.2 (vc's rebuild of arca_cli), AC-06.1 (vc's report) and AC-06.3 (hv's tag). None is buildable from here.
+**Almost certainly: nothing but wait, or help vc.** The three open ACs are AC-00.1 (vc's ack), AC-00.2 (vc's rebuild of arca_cli) and AC-06.1 (vc's report). None is buildable from here.
 
 If vc reports failures from the arca_cli rebuild, those come back to this repo as fixes -- that is the one path that reopens work. Expect exactly one arca_cli test to fail by design (`error_format_test.exs`, "failure: a setting that does not exist"); the one-line fix belongs in arca_cli and is written out in `CHANGELOG.md`.
 

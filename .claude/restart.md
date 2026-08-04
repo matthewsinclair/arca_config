@@ -2,9 +2,9 @@
 
 ## WIP focus
 
-**ST0002 remediation is complete; arca_config 0.3.0 is published at `03969fa` and CI is green.** WP-01 through WP-05 are all DONE. Contract is 34/38 -- BLOCKED, and correctly so: the four open ACs belong to other people.
+**ST0002 remediation is complete; arca_config `v0.3.0` is published, tagged and CI-green.** WP-01 through WP-05 are all DONE. Contract is 35/38 -- BLOCKED, and correctly so: the three open ACs are all vc's.
 
-**Nothing is buildable here right now.** Waiting on vc (rebuild arca_cli, report, ack the removal log) and hv (tag `v0.3.0`).
+**Nothing is buildable here right now.** Waiting on vc: rebuild arca_cli, report, ack the removal log. Held for the day at hv's instruction.
 
 ## Next
 

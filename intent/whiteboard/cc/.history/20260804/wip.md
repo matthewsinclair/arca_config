@@ -67,3 +67,10 @@ Five corrections to my own work this part, each on the record because the patter
 - (2026-08-04) AT-05.3 restated rather than built as drafted: a gate asserting declared == referenced deps would encode hv's overruled inference as CI and contradict AC-05.1 as rewritten.
 - (2026-08-04) AT-05.1 and part of AC-05.6 are structural tests that read source. With a backdoor clause gone, the old message matches no `handle_info/2` and kills the process, so a behavioural test would have to assert a crash.
 - (2026-08-04) `Cache` and `remove_callback/1` deliberately keep `{:error, :not_found}` through the dialect unification. Cache's "not found" means *not cached*, and the layer reading the cache first is the one that must tell those apart.
+
+## Release closed out, 2026-08-04 20:57
+
+- **`v0.3.0` tagged and pushed** at hv's instruction -- the first tag this repository has ever had. Annotated, pointing at `ccd8fb5`. Tagged that rather than `03969fa` after diffing `lib`, `test`, `mix.exs`, `mix.lock` and `.github` to confirm the trees are identical: everything between them is documentation, and a tag should mark the code CI actually verified.
+- **AC-06.3 satisfied. Contract 35/38.** The remaining three -- AC-00.1, AC-00.2, AC-06.1 -- are one piece of work with three outputs, all vc's.
+- `info.md` corrected: it still carried a duplicated "Related Steel Threads" section (populated plus untouched template placeholder) and a "v0.1: Initial version" verblock after the entire thread had run.
+- Node held for the day at hv's instruction. Handover to vc is `intent/st/ST0002/release-verification.md`.

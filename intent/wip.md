@@ -1,12 +1,12 @@
 ---
-verblock: "04 Aug 2026:v2.0: matts - ST0002 remediation complete, 0.3.0 published; awaiting vc's rebuild and hv's tag"
+verblock: "04 Aug 2026:v2.1: matts - ST0002 remediation complete, v0.3.0 tagged; awaiting vc's rebuild"
 ---
 
 # Work In Progress
 
 ## Current focus: ST0002 -- Fable review of arca_config base code
 
-**Remediation is complete and 0.3.0 is published.** Five of six work packages are done; the sixth is downstream verification and release, and none of it can be done from this repository.
+**Remediation is complete and `v0.3.0` is published and tagged.** Five of six work packages are done; the sixth is downstream verification, and none of it can be done from this repository.
 
 | WP    | Archetype                                  | State                                  | Gate |
 | ----- | -------------------------------------------- | ---------------------------------------- | ---- |
@@ -15,13 +15,13 @@ verblock: "04 Aug 2026:v2.0: matts - ST0002 remediation complete, 0.3.0 publishe
 | WP-03 | AR-3 notification describes another system | DONE `c66bd29`                         | 6/6  |
 | WP-04 | AR-4 location is ambient guesswork         | DONE `8d82cf4`                         | 7/7  |
 | WP-05 | AR-5 shipped scaffolding                   | DONE `284a803` `27620e9`               | 6/6  |
-| WP-06 | release                                    | vc's rebuild + hv's tag                | --   |
+| WP-06 | release                                    | tagged; awaiting vc's rebuild          | --   |
 
-`intent ac status ST0002` reads **34/38 satisfied -- BLOCKED**, which is correct: the four open ACs are vc's ack, vc's rebuild, vc's report, and hv's tag.
+`intent ac status ST0002` reads **35/38 satisfied -- BLOCKED**, which is correct: the three open ACs are all vc's -- the rebuild, the report, and the ack of the removal log.
 
 | | |
 | --- | --- |
-| Published | `03969fa` on `main`, GitHub `matthewsinclair/arca_config`. Version 0.3.0 (R5), **untagged** |
+| Published | `v0.3.0` tagged and pushed (the repo's first tag), pointing at `ccd8fb5` -- tree identical to the CI-green build `03969fa`. GitHub `matthewsinclair/arca_config` |
 | Suite | 222 passed (48 doctests, 174 tests), from a 128 baseline. 8 seeds, zero stray output |
 | Gates | compile and test both `--warnings-as-errors` clean, format clean, coverage 90.47% against an enforced threshold of 90 |
 | CI | green on 1.18.0/OTP 27, 1.18.4/OTP 28, 1.20.2/OTP 29 |
@@ -37,12 +37,11 @@ verblock: "04 Aug 2026:v2.0: matts - ST0002 remediation complete, 0.3.0 publishe
 - **AC-00.4** -- the consumer contract is pinned by tests *here*: every call arca_cli makes, each citing the arca_cli `file:line`.
 - **AC-05.6** -- a critic pass found 21 further findings, all closed, including four criticals the audit missed.
 
-## What is left
+## What is left -- all of it vc's
 
-- **AC-00.2** -- vc rebuilds arca_cli against `03969fa` and runs its full suite. **One test will fail by design**; the one-line fix is in `CHANGELOG.md` and in the handover.
+- **AC-00.2** -- vc rebuilds arca_cli against the published head and runs its full suite. **One test will fail by design**; the one-line fix is in `CHANGELOG.md` and in the handover.
 - **AC-00.1** -- vc's ack on the public-symbol removal log. No public symbol was retired in the entire thread.
 - **AC-06.1** -- vc's report on that rebuild.
-- **AC-06.3** -- hv tags `v0.3.0`. This repo has no tags at all yet.
 
 Handover package: `intent/st/ST0002/release-verification.md` -- self-contained, written for the validation node.
 

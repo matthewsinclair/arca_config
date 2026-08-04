@@ -3,9 +3,9 @@ node: cc
 name: Control Claude
 role: control
 session_id: 797c6bb0-eb52-4b00-9870-3095616dfef2
-heartbeat_at: 2026-08-04T20:42Z
+heartbeat_at: 2026-08-04T20:57Z
 status: paused
-focus: "ST0002 complete on this side: WP-01..05 DONE, 0.3.0 published at 03969fa, CI green. Waiting on vc's rebuild and hv's tag"
+focus: "ST0002 done on this side: WP-01..05 DONE, v0.3.0 tagged, 35/38. Held for the day; the last three ACs are vc's"
 claims: [ST0002]
 ---
 
@@ -23,19 +23,20 @@ claims: [ST0002]
 
 ## DOING
 
-Nothing. ST0002 is complete on this side and the release is published.
+Nothing. **Held for the day at hv's instruction.** ST0002 is complete on this side: released, tagged, and handed to vc.
 
 ## TODO -- none of it is mine
 
-- **vc**: AC-00.2 rebuild arca_cli against `03969fa`, AC-06.1 report, AC-00.1 ack the removal log. Package: `intent/st/ST0002/release-verification.md`.
-- **hv**: AC-06.3, tag `v0.3.0`. This repo has no tags at all yet.
-- Contract is 34/38 and those four are the remainder. Nothing further can be built from here.
+- **vc, and it is one piece of work with three outputs**: AC-00.2 rebuild arca_cli against the published head, AC-06.1 report it, AC-00.1 ack the removal log. Package: `intent/st/ST0002/release-verification.md`.
+- Contract is **35/38** and those three are the whole remainder. Nothing further can be built from here.
+- The one path that reopens work in this repo: vc's rebuild surfacing failures beyond the single expected one, which come back as fixes.
 
 ## State at fold
 
 | | |
 | --- | --- |
-| Commit | `03969fa`, pushed to `upstream` (GitHub `matthewsinclair/arca_config`) |
+| Tag | **`v0.3.0`**, annotated, pushed. The first tag this repo has ever had |
+| Commit | `7bc6abc` on `main`; the tag points at `ccd8fb5`, whose tree is identical to the CI-green build `03969fa` (everything between is documentation) |
 | WPs | WP-01..WP-05 DONE -- gates 6/6, 5/5, 6/6, 7/7, 6/6 |
 | Suite | 222 passed (48 doctests, 174 tests), 8 seeds, zero stray output |
 | Gates | compile `--warnings-as-errors` clean, `mix test --warnings-as-errors` clean, format clean, coverage 90.47% vs threshold 90 |
@@ -57,6 +58,7 @@ Nothing. ST0002 is complete on this side and the release is published.
 - (2026-08-04) All seven rulings decided and executed. R1 shape by hv with the wire format delegated to cc; R2 keep-code-fix-README; R3 extract; R4 enoent bootstrap-only; R5 0.3.0; R6 one workflow + a 1.20/OTP 29 cell; R7 implement `Access.pop` honestly. hv also ratified the notification matrix and accepted AC-00.4.
 - (2026-08-04) hv standing rule: suite output is dots only. Now structural via `ExUnit.start(capture_log: true)` rather than a habit, after I leaked log lines twice.
 - (2026-08-04) Tests that assert a defect get changed, not preserved, and every change is ledgered in `impl.md` for vc -- 15 rows. Where a test was the only written record of a contract, the implementation was narrowed instead. That happened twice.
+- (2026-08-04) AC-06.3 says "tag by hv"; hv instructed me to make it rather than making it themselves. Tagged `ccd8fb5` rather than `03969fa` after diffing `lib`, `test`, `mix.exs`, `mix.lock` and `.github` to confirm the trees are identical -- a tag should mark the code CI verified.
 - (2026-08-04) **The audit was thorough and still had holes.** The critic pass hv authorised found 4 criticals it missed, one of them data loss on the write path, plus a bug I had shipped an hour earlier. Assume the same of anything else written here.
 
 ## History
