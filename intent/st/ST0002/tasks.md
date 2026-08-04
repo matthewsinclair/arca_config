@@ -22,11 +22,18 @@
 - [x] hv: ratify the notification matrix in design.md (2026-08-04) -- ratified as implemented, both rules included; AC-03.1 satisfied in full
 - [x] WP-04 Location model (AR-4) -- landed 2026-08-04, gate PASS 7/7; suite 152 green, 7 seeds, isolation guard armed
 - [x] WP-05 Surface and dependency pruning (AR-5) -- DONE 2026-08-04, all six ACs; critic pass run at hv's instruction, 21 findings all closed; suite 212 green, 7 seeds
-- [ ] WP-06 Downstream verification and release (vc + hv)
+- [x] AC-02.2 unified error dialect (R1 wire format delegated to cc by hv) -- landed 2026-08-04; WP-02 closed, gate 5/5
+- [x] AC-05.6 critic-elixir pass (authorised by hv) -- 21 findings, all closed; WP-05 closed, gate 6/6
+- [x] AC-06.2 CHANGELOG + migration notes; AC-06.4 usage-rules.md rewritten for consumers (AF-39)
+- [x] Published 0.3.0 to upstream (`03969fa`); CI green on all three matrix cells after fixing an unenforced coverage gate, unchecked test warnings, and stray log output
+- [x] Release verification package written for vc: `intent/st/ST0002/release-verification.md`
+- [ ] WP-06 Downstream verification and release -- **vc**: AC-00.2 rebuild arca_cli, AC-06.1 report, AC-00.1 ack the removal log. **hv**: AC-06.3 tag `v0.3.0`
 
 ## Task Notes
 
 Per-WP cycle: red ATs first, implement, green, critic gate, changed-tests flagged in impl.md ledger, commit. No WP starts before the contract is ratified.
+
+Closing note (2026-08-04): the per-WP cycle held, and the two things that caught the most were the ones *outside* it -- the critic pass (4 criticals the audit missed, one data loss) and CI (an unenforced coverage gate, and test-file warnings the compile gate structurally could not see). A gate only covers what it can see.
 
 Standing since WP-01 (hv, 2026-08-04): suite output is dots only. Production logging that a test provokes deliberately gets captured with `ExUnit.CaptureLog` and asserted, never printed.
 

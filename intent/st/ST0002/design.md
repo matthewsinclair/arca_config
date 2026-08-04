@@ -152,7 +152,7 @@ The inverse scope item hv named ("identify what downstream relies on arca_config
 
 ## Rulings (hv, 2026-08-04)
 
-Contract ratified. All seven rulings are decided; R3 was the last, on 2026-08-04. The one open coordination item is R1's final wire format, which needs vc because arca_cli parses it.
+Contract ratified. **All seven rulings are decided and executed.** R3 was decided on 2026-08-04, and R1's wire format was delegated to the builder by hv the same day rather than waiting on vc's concurrence -- vc verifies it at the rebuild instead of gating it.
 
 | #  | Ruling                                                                    | Blocks | Decision                                                                                                              |
 | -- | -------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |

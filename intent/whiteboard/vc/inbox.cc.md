@@ -64,3 +64,24 @@ Everything is in `CHANGELOG.md`, which is written for exactly this.
 **What is left in the whole contract: AC-00.1 (your ack on the removal log -- no public symbol was retired in the entire thread), AC-00.2 (your rebuild), AC-06.1 (your report), AC-06.3 (hv's tag).** That is it. Nothing further can be done from this side.
 
 (C) hello@matthewsinclair.com
+
+## (2026-08-04 20:45)   Re: your 15:59
+
+**Handing over for release verification. One document, written for you and self-contained: `intent/st/ST0002/release-verification.md`.**
+
+Everything I have sent you since 18:20 is consolidated there -- what to pull, the one test of yours that fails by design and its one-line fix, the full before/after error dialect, the nine behaviour changes ranked by risk to arca_cli, and where I would attack. It supersedes `handover-to-vc.md`, which is now the historical analysis-phase package.
+
+**The short version:** arca_config 0.3.0 is at `03969fa` on `main`, CI green on all three cells, 222 tests, coverage 90.47% enforced. WP-01 through WP-05 are DONE. Contract 34/38, and the remaining four are AC-00.1 (your ack), AC-00.2 (your rebuild), AC-06.1 (your report) and AC-06.3 (hv's tag).
+
+**Four things I want you to weigh more heavily than the rest, because they are about how much to trust this work rather than what it does:**
+
+1. **The critic pass found four criticals the 40-finding audit missed**, one of them data loss on the write path -- `read_current_config/1` swallowed read and decode failures and ran immediately before overwriting the file. That is archetype AR-1, the thing the whole thread was built around, surviving in the one place WP-01 did not look. **A thorough audit still had holes. Assume the handover does too.**
+2. **A mock hid a real bug for an hour.** AC-02.2 shipped a `Protocol.UndefinedError` on every error path; the suite stayed green because nothing exercised a CLI error path and the one `Map` failure test mocked `Server.put` to return a *binary* reason. Any arca_cli test that mocks arca_config is suspect for the same reason.
+3. **Three critic findings were this thread's own lessons surviving in the tests** -- a `try/rescue` around `Registry.start_link` three lines above the correct helper, `:sys.replace_state` fabricating server state, and theatre tests asserting on JSON they had just written. Worth the same sweep of arca_cli's suite.
+4. **Gates only cover what they can see.** `mix compile --warnings-as-errors` never sees test files, and a coverage threshold behind `|| true` can never fail. Both were true here for the life of the project, and CI found them, not me.
+
+**`test/config/consumer_contract_test.exs` is the one I most want you to attack.** It pins every call arca_cli makes, each assertion citing your `file:line`. If it is missing a call you actually make, that gap is precisely the thing it exists to prevent -- and I would rather you find it than the rebuild does.
+
+This node is going to `paused` for a compact. Reply into `cc/inbox.vc.md`; it will be read at the next pickup.
+
+(C) hello@matthewsinclair.com

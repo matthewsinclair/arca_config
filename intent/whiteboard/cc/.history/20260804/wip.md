@@ -39,3 +39,31 @@ Answered vc's privately-held lens without having been told it: all 11 test modul
 
 - `Arca.Config.get_config_location/0` has **never existed** in arca_config: `git log -S "get_config_location" --all` is empty, and it is absent at both pinned `8b30615` and HEAD. arca_cli hard-matches it at `cli_command_helper.ex:350`. Removed from the blast-radius table; the facade will nonetheless gain the function under AC-02.3.
 - The two commits of drift are **mix.lock only**: `git diff --stat 8b30615..HEAD -- lib/ mix.exs` is empty. arca_cli's 710 tests ran against source-identical arca_config.
+
+## DONE 2026-08-04, third part (same session, post-compact): WP-02, WP-05, AC-02.2, critic pass, release
+
+The remediation finished. Contract 19/38 -> 34/38, suite 152 -> 222 green, and arca_config 0.3.0 is published. Commits `afcff58`, `b0b63ab`, `f3aad5f`, `284a803`, `7b00d31`, `5978840`, `5cc2598`, `dca58eb`, `a97f3a7`, `27620e9`, `5dbd8da`, `00db498`, `03969fa`.
+
+hv ruled three times on resume, and delegated a fourth: the notification matrix RATIFIED as implemented; AC-00.4 ACCEPTED; **R3 = extract** (CLI to `Arca.Config.CLI`, single Optimus dispatch, escript target dropped, `mix arca.config` and `optimus` kept); and R1's wire format **delegated to me** ("pick a sensible one").
+
+- **AT-00.1 consumer contract + AC-02.3.** Every call arca_cli makes, each assertion citing the arca_cli `file:line`. The `register_change_callback/2` liveness proxy became a test, so deleting it now fails our suite instead of silently stopping every `save_settings` downstream. `get_config_location/0` implemented -- and the handover's claim that arca_cli hard-matches it was **wrong**: line 350 is inside a `@doc` heredoc and never raised. Corrected on the record.
+- **WP-02 (AR-2) DONE**, gate 5/5. `Cfg.get/put` delegate to `Server`, which answers AF-37: `Cfg` was never one module. It is the location and load authority, pure over environment and filesystem; the nested get/put half was the duplicate. Kept as delegates, not deleted, per hv's lens. `Access.pop` deletes. The dead `{:ok, conf}` clause and the test that mocked `GenServer` to reach it are gone. AC-02.2 unified the dialect to `{:error, {:config, reason, detail}}`, arca_config first.
+- **WP-05 (AR-5) DONE**, gate 6/6. CLI extracted with a single Optimus dispatch (the spec was unreachable before), escript target dropped, both test backdoors removed, one CI workflow, committed `.arca_config/` artifacts and debug scripts gone, dependency set made deliberate rather than pruned.
+- **Critic pass (AC-05.6), authorised by hv: 21 findings at the gate, all closed.** It caught a `Protocol.UndefinedError` I had shipped an hour earlier on every error path, and **four criticals the Fable audit missed** -- including C1, data loss: `read_current_config/1` swallowed read and decode failures and ran immediately before overwriting the file.
+- **Published.** 0.3.0 pushed to GitHub. CI failed on first run and everything it found was mine: an unenforced coverage gate (the old workflow ran `mix test --cover || true`), test-file warnings nothing checked, and two rounds of stray log output. All fixed; CI green on all three cells.
+
+Five corrections to my own work this part, each on the record because the pattern matters more than the instance:
+
+- **I shipped a bug and the critic found it, not me.** AC-02.2 changed reasons to tuples; five sites still interpolated them into strings. The suite stayed green because nothing exercised a CLI error path and the one `Map` failure test mocked `Server.put` to return a *binary* -- the mock kept the test passing through the exact contract change it existed to cover.
+- **I nearly lowered a bar instead of meeting it.** Faced with a failing coverage gate I first set `threshold: 85`. The real gap was `Mix.Tasks.Arca.Config` at 0% -- the CLI path ruling R3 kept *because* it is the documented one. Testing it honestly reached 90.47%, so the threshold stayed at 90.
+- **An over-broad find-and-replace shipped three compile warnings** in `callback_test.exs`, and `mix compile --warnings-as-errors` could not see them because it only compiles `lib/`. The gate I had run all thread was blind to test code.
+- **I leaked log output twice** after hv's standing rule, and chasing leaks individually did not hold. `ExUnit.start(capture_log: true)` makes dots-only structural.
+- **The second leak was also a real defect.** My own C3 warning fired whenever a stat failed, but the watcher re-resolves its path every tick, so a test restoring env vars moved it -- reporting a file "no longer readable" that nobody had said was there. A location change is not a disappearance.
+
+## Settled decisions, retired from the live board
+
+- (2026-08-04) R1 shape decided by hv, wire format delegated to cc and shipped: `{:error, {:config, reason, detail}}`, arca_config first, because 0.3.0 is breaking under R5 and the WP-06 rebuild is the gate that closes the window.
+- (2026-08-04) R3 decided **extract**. The audit leaned delete, but `mix arca.config` -- not the escript -- is the documented path, and extract fixes AF-11 and AF-34 without removing surface a user outside the fleet could be invoking.
+- (2026-08-04) AT-05.3 restated rather than built as drafted: a gate asserting declared == referenced deps would encode hv's overruled inference as CI and contradict AC-05.1 as rewritten.
+- (2026-08-04) AT-05.1 and part of AC-05.6 are structural tests that read source. With a backdoor clause gone, the old message matches no `handle_info/2` and kills the process, so a behavioural test would have to assert a crash.
+- (2026-08-04) `Cache` and `remove_callback/1` deliberately keep `{:error, :not_found}` through the dialect unification. Cache's "not found" means *not cached*, and the layer reading the cache first is the one that must tell those apart.
