@@ -3,9 +3,9 @@ node: cc
 name: Control Claude
 role: control
 session_id: 797c6bb0-eb52-4b00-9870-3095616dfef2
-heartbeat_at: 2026-08-04T18:49Z
+heartbeat_at: 2026-08-04T19:08Z
 status: active
-focus: "ST0002 -- 30/38, suite 188 green. WP-01/03/04 done, WP-02 and WP-05 partial. Only AC-02.2 (vc/R1), AC-05.6 (critic) and WP-06 remain"
+focus: "ST0002 -- 31/38, suite 200 green. WP-01/02/03/04 DONE, WP-05 waiting on the critic pass. Everything else is vc's or hv's"
 claims: [ST0002]
 ---
 
@@ -27,12 +27,13 @@ vc provisioned its node here at 15:59 (`intent claude ws new vc`), after this se
 
 - Resumed post-compact 2026-08-04T18:14Z; still active. Session record for the day is in `.history/20260804/wip.md`; inbox from vc is empty.
 - **hv ruled three times on resume**: notification matrix RATIFIED as implemented; AC-00.4 ACCEPTED (contract 38); **R3 = extract** (CLI to `Arca.Config.CLI`, single Optimus dispatch, escript target dropped, `mix arca.config` and `optimus` kept).
-- **Landed since**: AT-00.1 consumer contract + AC-02.3 (`afcff58`, `b0b63ab`), WP-02 partial AC-02.1/.4/.5 (`f3aad5f`), WP-05 AC-05.1/.2/.3/.4/.5 (`284a803`). Contract 20 -> 24 -> 30 of 38. Suite 152 -> 188 green (48 doctests, 140 tests), five seeds, compile clean, no drift.
+- **Landed since**: AT-00.1 consumer contract + AC-02.3 (`afcff58`, `b0b63ab`), WP-02 partial (`f3aad5f`), WP-05 AC-05.1..05.5 (`284a803`), **AC-02.2 the unified dialect (`5978840`) which closes WP-02, gate PASS 5/5**. Contract 20 -> 24 -> 30 -> 31 of 38. Suite 152 -> 200 green (48 doctests, 152 tests), six seeds, compile clean, format clean, no drift.
+- **hv delegated R1's wire format to me** ("pick a sensible one"): `{:error, {:config, reason, detail}}`, arca_config first. Decided, shipped, and told to vc with the one-line clause its rebuild needs.
+- **critic-elixir is running** for AC-05.6, at hv's instruction. It is the last thing standing between WP-05 and done.
 
 ## TODO (what is left, and who it needs)
 
-- **AC-02.2 -- the unified error dialect.** The only thing left in WP-02. Needs the R1 wire format. I have answered it empirically from arca_cli's source and put the proposal to vc (19:27); it needs vc's concurrence or hv's ruling on migration order.
-- **AC-05.6 -- critic-elixir pass on changed files.** The only thing left in WP-05; the structural half is green. Needs hv to authorise a subagent -- I do not call one unasked.
+- **AC-05.6 -- act on the critic-elixir findings.** The only thing left in WP-05 and the only thing left that is mine. Structural half already green.
 - **AC-00.1, AC-00.2 -- vc.** No public symbol has been retired, and the removal log now says so with the evidence; both still want vc's ack and the arca_cli rebuild.
 - **WP-06** -- release: vc rebuild of arca_cli (710 tests), migration notes, 0.3.0 tag (R5).
 - Per-WP cycle unchanged: red-first ATs, implement, green, changed tests flagged in impl.md's ledger, commit.
