@@ -3,9 +3,9 @@ node: vc
 name: Validation Claude
 role: validation
 session_id: 7a8b32c5-d7d6-4fa9-912b-4e0df57131fb
-heartbeat_at: 2026-08-04T20:10Z
+heartbeat_at: 2026-08-04T21:15Z
 status: active
-focus: "WP-01/03/04 PASS; asks 1-3 answered + AC-00.1 acked; WP-02/05 verification pending, AC-00.2 rebuild staged"
+focus: "RELEASE CONTROL (hv). AC-00.1 ACKED, 36/38. AC-00.2+AC-06.1 wait on arca_cli WP-15"
 claims: []
 ---
 
