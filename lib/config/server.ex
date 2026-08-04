@@ -452,46 +452,17 @@ defmodule Arca.Config.Server do
 
   @impl true
   def handle_call({:put, key_path, value}, _from, state) do
-    # Read current config from file to ensure we have the latest version
-    current_config = read_current_config(state.config)
-
-    # Update in-memory config (merging with current config from file)
-    new_config = put_in_nested(current_config, key_path, value)
-
-    case write_config(new_config) do
-      :ok ->
-        rebuild_cache(new_config)
-        notify_write(current_config, new_config)
-
-        {:reply, {:ok, value}, %{state | config: new_config}}
-
-      {:error, reason} ->
-        # The write did not land, so neither state nor cache may advance past
-        # it: a later read must reflect the disk, not the value we failed to
-        # persist. No notification either -- nothing changed.
-        {:reply, {:error, reason}, state}
+    case read_current_config(state.config) do
+      {:ok, current_config} -> reply_to_put(current_config, key_path, value, state)
+      {:error, _reason} = error -> {:reply, error, state}
     end
   end
 
   @impl true
   def handle_call({:delete, key_path}, _from, state) do
-    # Read current config from file to ensure we have the latest version
-    current_config = read_current_config(state.config)
-
-    # Delete the key path from config
-    new_config = delete_in_nested(current_config, key_path)
-
-    case write_config(new_config) do
-      :ok ->
-        rebuild_cache(new_config)
-        notify_write(current_config, new_config)
-
-        {:reply, {:ok, :deleted}, %{state | config: new_config}}
-
-      {:error, reason} ->
-        # As for put/2: a failed write leaves state and cache exactly as they
-        # were, so the deleted-looking key is still readable and still on disk.
-        {:reply, {:error, reason}, state}
+    case read_current_config(state.config) do
+      {:ok, current_config} -> reply_to_delete(current_config, key_path, state)
+      {:error, _reason} = error -> {:reply, error, state}
     end
   end
 
@@ -515,67 +486,37 @@ defmodule Arca.Config.Server do
 
   @impl true
   def handle_call({:switch_config_location, opts}, _from, state) do
-    # Get the env var prefix
     env_prefix = Cfg.env_var_prefix()
     path_var = "#{env_prefix}_CONFIG_PATH"
     file_var = "#{env_prefix}_CONFIG_FILE"
 
-    # Store current location
-    previous_location = [
-      path: System.get_env(path_var),
-      file: System.get_env(file_var)
-    ]
+    previous_location = [path: System.get_env(path_var), file: System.get_env(file_var)]
 
-    # Stop the current file watcher
     Arca.Config.FileWatcher.stop_watching()
 
-    # Update environment variables if options provided
-    if Keyword.has_key?(opts, :path) do
-      case Keyword.get(opts, :path) do
-        nil -> System.delete_env(path_var)
-        path -> System.put_env(path_var, path)
-      end
-    end
+    apply_location(path_var, Keyword.fetch(opts, :path))
+    apply_location(file_var, Keyword.fetch(opts, :file))
 
-    if Keyword.has_key?(opts, :file) do
-      case Keyword.get(opts, :file) do
-        nil -> System.delete_env(file_var)
-        file -> System.put_env(file_var, file)
-      end
-    end
-
-    # Load configuration from new location
     case Cfg.load() do
       {:ok, config} ->
-        # Rebuild cache with new config
         rebuild_cache(config)
-
-        # Restart file watcher with new location
         Arca.Config.FileWatcher.start_watching()
-
         notify_change(state.config, config)
 
-        # Return previous location for restoration
         {:reply, {:ok, previous_location}, %{state | config: config, loaded: true}}
 
       {:error, reason} ->
-        # On error the previous location stays live, so restore its environment
-        # variables, its cache, and its watcher -- the switch did not happen.
+        # The switch did not happen, so the previous location stays live in
+        # every respect: environment variables, cache and watcher. Restoring it
+        # is the same operation as applying it, which is why both branches now
+        # go through `apply_location/2` instead of one being a hand-rolled
+        # inverse of the other -- four copies of "value ? put_env : delete_env",
+        # in two different shapes, free to drift apart.
         rebuild_cache(state.config)
 
-        if previous_location[:path] do
-          System.put_env(path_var, previous_location[:path])
-        else
-          System.delete_env(path_var)
-        end
+        apply_location(path_var, {:ok, previous_location[:path]})
+        apply_location(file_var, {:ok, previous_location[:file]})
 
-        if previous_location[:file] do
-          System.put_env(file_var, previous_location[:file])
-        else
-          System.delete_env(file_var)
-        end
-
-        # Restart file watcher with original location
         Arca.Config.FileWatcher.start_watching()
 
         {:reply, {:error, reason}, state}
@@ -583,6 +524,59 @@ defmodule Arca.Config.Server do
   end
 
   # Load on demand the first time a key is read before the load phase has run.
+  # `:error` means the caller said nothing about this part of the location, so
+  # leave it alone; `{:ok, nil}` means they explicitly cleared it.
+  defp apply_location(_var, :error), do: :ok
+  defp apply_location(var, {:ok, nil}), do: System.delete_env(var)
+  defp apply_location(var, {:ok, value}), do: System.put_env(var, value)
+
+  defp reply_to_put(current_config, key_path, value, state) do
+    new_config = put_in_nested(current_config, key_path, value)
+
+    case write_config(new_config) do
+      :ok ->
+        rebuild_cache(new_config)
+        notify_write(current_config, new_config)
+
+        {:reply, {:ok, value}, %{state | config: new_config}}
+
+      {:error, reason} ->
+        # The write did not land, so neither state nor cache may advance past
+        # it: a later read must reflect the disk, not the value we failed to
+        # persist. No notification either -- nothing changed.
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  # A key that was never set is not deleted, and saying `{:ok, :deleted}` for it
+  # was the AR-1 shape on the public surface: a success return claiming an
+  # effect that did not happen. The facade documented the opposite the whole
+  # time -- `{:error, reason}` if the key did not exist, and a raise from
+  # `delete!/1` -- so this makes the code agree with its own contract.
+  defp reply_to_delete(current_config, key_path, state) do
+    case get_in_nested(current_config, key_path) do
+      {:ok, _value} -> write_deletion(current_config, key_path, state)
+      {:error, _reason} = error -> {:reply, error, state}
+    end
+  end
+
+  defp write_deletion(current_config, key_path, state) do
+    new_config = delete_in_nested(current_config, key_path)
+
+    case write_config(new_config) do
+      :ok ->
+        rebuild_cache(new_config)
+        notify_write(current_config, new_config)
+
+        {:reply, {:ok, :deleted}, %{state | config: new_config}}
+
+      {:error, reason} ->
+        # As for put/2: a failed write leaves state and cache exactly as they
+        # were, so the deleted-looking key is still readable and still on disk.
+        {:reply, {:error, reason}, state}
+    end
+  end
+
   defp ensure_loaded(%{config: config, loaded: false} = state) when map_size(config) == 0 do
     case Cfg.load() do
       {:ok, loaded_config} ->
@@ -606,24 +600,50 @@ defmodule Arca.Config.Server do
     {:reply, {:error, reason}, state}
   end
 
-  # Read the current configuration from file or fall back to provided config
+  # Read the configuration currently on disk, so a write merges into whatever is
+  # actually there rather than into what this process last saw.
+  #
+  # A file that exists but cannot be read or parsed is NOT treated as absent.
+  # This runs immediately before the file is overwritten, so folding a decode
+  # failure into the in-memory config meant a configuration a person had
+  # hand-edited into invalid JSON was silently discarded and replaced on the
+  # next `put/2` -- data loss with no log line, no error, and no trace. The
+  # watcher already refuses to do this (`reload_tolerantly/0` keeps its last
+  # good config and says so); this path used to erase instead.
+  #
+  # A file that is simply not there yet is the ordinary first-write case, and
+  # the in-memory config is the right base for it.
+  @spec read_current_config(map()) :: {:ok, map()} | {:error, term()}
   defp read_current_config(fallback_config) do
-    require Logger
-
-    # The resolved location, from the one authority (Arca.Config.Cfg).
     config_path = Cfg.config_file() |> Path.expand()
 
-    # Logger.debug("Reading config from path: #{config_path}")
-
-    with {:ok, content} <- File.read(config_path),
-         {:ok, config} <- Jason.decode(content) do
-      config
-    else
-      _error ->
-        # Logger.debug("Error reading config file: #{inspect(error)}, using fallback config")
-        fallback_config
+    case File.read(config_path) do
+      {:ok, content} -> decode_current_config(content, config_path)
+      {:error, :enoent} -> {:ok, fallback_config}
+      {:error, reason} -> Error.load_failed(reason)
     end
   end
+
+  defp decode_current_config(content, config_path) do
+    require Logger
+
+    case Jason.decode(normalize_config_content(content)) do
+      {:ok, config} ->
+        {:ok, config}
+
+      {:error, _reason} ->
+        Logger.error(
+          "Refusing to overwrite #{config_path}: it exists but is not valid JSON. " <>
+            "Fix or remove the file; no configuration was changed."
+        )
+
+        Error.load_failed("Existing config file is not valid JSON")
+    end
+  end
+
+  # An empty file is an empty configuration, matching `Cfg.load/2`.
+  defp normalize_config_content(""), do: "{}"
+  defp normalize_config_content(content), do: content
 
   # Private functions
 
@@ -806,12 +826,27 @@ defmodule Arca.Config.Server do
   # would otherwise deadlock against the very mutation that triggered it, and
   # widening the matrix means callbacks now fire on paths where that is reachable.
   defp dispatch_callbacks_async(config) do
-    Task.Supervisor.start_child(Arca.Config.TaskSupervisor, fn ->
+    require Logger
+
+    Arca.Config.TaskSupervisor
+    |> Task.Supervisor.start_child(fn ->
       dispatch_config_callbacks(config)
       notify_callbacks()
     end)
+    |> case do
+      {:ok, _pid} ->
+        :ok
 
-    :ok
+      {:error, reason} ->
+        # The write itself landed, so this does not fail the caller -- but the
+        # matrix promises each channel fires once per change event, and this is
+        # the only place that can tell anyone it did not.
+        Logger.error(
+          "Configuration changed but callbacks could not be dispatched: #{inspect(reason)}"
+        )
+
+        :ok
+    end
   end
 
   defp dispatch_config_callbacks(config) do

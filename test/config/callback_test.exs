@@ -173,8 +173,7 @@ defmodule Arca.Config.CallbackTest do
       test_pid = self()
       callback_fn = fn -> send(test_pid, :config_changed) end
 
-      # Register the callback
-      {:ok, _ref} = Config.add_callback(callback_fn)
+      {:ok, ref} = Config.add_callback(callback_fn)
 
       # Update configuration
       Config.put("test_key", "test_value")
@@ -190,8 +189,7 @@ defmodule Arca.Config.CallbackTest do
       # Add a value to be deleted
       Config.put("temp_key", "temp_value")
 
-      # Register the callback
-      {:ok, _ref} = Config.add_callback(callback_fn)
+      {:ok, ref} = Config.add_callback(callback_fn)
 
       # Delete the value
       Server.delete("temp_key")
@@ -204,8 +202,7 @@ defmodule Arca.Config.CallbackTest do
       test_pid = self()
       callback_fn = fn -> send(test_pid, :config_changed) end
 
-      # Register the callback
-      {:ok, _ref} = Config.add_callback(callback_fn)
+      {:ok, ref} = Config.add_callback(callback_fn)
 
       # Reload configuration
       Config.reload()
@@ -218,29 +215,25 @@ defmodule Arca.Config.CallbackTest do
       test_pid = self()
       callback_fn = fn -> send(test_pid, :config_changed) end
 
-      # Register the callback
-      {:ok, _ref} = Config.add_callback(callback_fn)
+      {:ok, ref} = Config.add_callback(callback_fn)
 
-      # Let's directly call notify_external_change to verify callback works
       Arca.Config.Server.notify_external_change()
-
-      # Verify callback was triggered
       assert_receive :config_changed, 500
 
-      # Now let's validate the integration with the file change detection
-      # First clear any pending messages
-      receive do
-        :config_changed -> :ok
-      after
-        0 -> :ok
-      end
+      # The second phase gets its own message rather than draining the first
+      # phase's. Draining used to be `receive … after 0`, which stopped being
+      # sound when callbacks moved off the server process: the first message may
+      # still be in flight when the drain looks, so the drain finds nothing and
+      # the assertion below can be satisfied by the stale message instead of by
+      # the reload it claims to test. Distinct payloads cannot be confused.
+      Config.remove_callback(ref)
 
-      # Test the file watcher's response to reload, not the file watching itself
-      # which is tested elsewhere
+      {:ok, reload_ref} = Config.add_callback(fn -> send(test_pid, :reloaded) end)
+      on_exit(fn -> Config.remove_callback(reload_ref) end)
+
       Server.reload()
 
-      # Wait for notification
-      assert_receive :config_changed, 500
+      assert_receive :reloaded, 500
     end
   end
 end

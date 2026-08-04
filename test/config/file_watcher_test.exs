@@ -185,4 +185,86 @@ defmodule Arca.Config.FileWatcherTest do
 
     assert {:ok, "ExternalUpdate"} = Arca.Config.get("app.name")
   end
+
+  # From the critic pass (finding C3). `get_file_info/1` folded every File.stat
+  # failure into `nil`, and `file_changed?(nil, _)` is false -- so a config file
+  # that had been deleted or become unreadable was indistinguishable from one
+  # that had not changed, forever, silently.
+  test "a config file that disappears is reported once, and the watcher keeps watching", %{
+    test_file: test_file
+  } do
+    FileWatcher.start_watching(test_file)
+    :sys.get_state(FileWatcher)
+
+    File.rm!(test_file)
+
+    # `:sys.get_state/1` inside the capture is the synchronisation: it returns
+    # only once the watcher has processed the :check_file already in its mailbox.
+    log =
+      capture_log(fn ->
+        send(FileWatcher, :check_file)
+        :sys.get_state(FileWatcher)
+      end)
+
+    assert log =~ "can no longer be read"
+
+    # Reported on the transition only: a second tick with the file still gone
+    # must not repeat itself, or a deleted file writes a log line per second.
+    quiet =
+      capture_log(fn ->
+        send(FileWatcher, :check_file)
+        :sys.get_state(FileWatcher)
+      end)
+
+    refute quiet =~ "can no longer be read"
+
+    assert %{watching: true} = :sys.get_state(FileWatcher)
+  end
+
+  test "the watcher recovers when the file comes back", %{test_file: test_file} do
+    test_pid = self()
+    {:ok, ref} = Arca.Config.add_callback(fn -> send(test_pid, :config_changed) end)
+    on_exit(fn -> Arca.Config.remove_callback(ref) end)
+
+    FileWatcher.start_watching(test_file)
+    :sys.get_state(FileWatcher)
+
+    File.rm!(test_file)
+
+    capture_log(fn ->
+      send(FileWatcher, :check_file)
+      :sys.get_state(FileWatcher)
+    end)
+
+    File.write!(test_file, Jason.encode!(%{"app" => %{"name" => "Restored"}}, pretty: true))
+    send(FileWatcher, :check_file)
+
+    assert_receive :config_changed, 1000
+    assert {:ok, "Restored"} = Arca.Config.get("app.name")
+  end
+
+  # From the critic pass (finding C4). `start_watching/1` was a cast typed
+  # `:: :ok`, so a cast to a dead watcher answered `:ok` too -- and because the
+  # watcher restarts dormant and only this call re-arms it, a single crash left
+  # external change detection off for the life of the VM with every caller
+  # having been told it was on.
+  test "start_watching/1 answers synchronously", %{test_file: test_file} do
+    assert {:ok, :watching} = FileWatcher.start_watching(test_file)
+    assert %{watching: true} = :sys.get_state(FileWatcher)
+  end
+
+  # Restarted through the supervisor rather than killed: `restart_child/2`
+  # returns the new pid, so this is synchronous with no polling loop. What is
+  # under test is `init/1` re-arming itself, and a supervised restart runs the
+  # same `init/1` the supervisor would run after a crash -- OTP's own restart
+  # is not this library's to prove.
+  test "a watcher that restarts comes back armed rather than dormant", %{test_file: test_file} do
+    FileWatcher.start_watching(test_file)
+    :sys.get_state(FileWatcher)
+
+    :ok = Supervisor.terminate_child(Arca.Config.Supervisor, FileWatcher)
+    {:ok, restarted} = Supervisor.restart_child(Arca.Config.Supervisor, FileWatcher)
+
+    assert %{watching: true} = :sys.get_state(restarted)
+  end
 end

@@ -121,7 +121,15 @@ defmodule Arca.Config.ServerTest do
       assert {:ok, "admin"} = Server.get(["database", "user", "name"])
       assert {:ok, %{"name" => "admin"}} = Server.get(["database", "user"])
     end
+  end
 
+  # Its own describe block. This setup used to sit at the bottom of `put/2`,
+  # after the three tests above -- and ExUnit applies a describe-level setup to
+  # every test in the block regardless of where it is written, so those three
+  # also ran with the domain switched to `:test_app` and the location pointed at
+  # a freshly-created empty directory, contrary to what the setup's own comment
+  # said it was for.
+  describe "put/2 with an absolute config path" do
     setup do
       # Set up a dedicated test directory for the absolute path tests
       test_name = "absolute_path_test_#{:rand.uniform(1000)}"
@@ -314,9 +322,22 @@ defmodule Arca.Config.ServerTest do
       assert {:error, _} = Server.get("database.port")
     end
 
-    test "returns success when deleting non-existent key" do
-      assert {:ok, :deleted} = Server.delete("non_existent")
-      assert {:ok, :deleted} = Server.delete("database.non_existent")
+    # Replaces a test that asserted `{:ok, :deleted}` for a key that was never
+    # set and never deleted -- the AR-1 shape on the public surface. The facade
+    # documented the opposite the whole time (`{:error, reason}` if the key did
+    # not exist, and a raise from `delete!/1`), so the code has been brought to
+    # its own contract rather than the contract to the code.
+    test "deleting a key that was never set is an error, not a deletion" do
+      assert {:error, {:config, :not_found, ["non_existent"]}} = Server.delete("non_existent")
+
+      assert {:error, {:config, :not_found, ["database", "non_existent"]}} =
+               Server.delete("database.non_existent")
+    end
+
+    test "delete! raises for a key that was never set" do
+      assert_raise RuntimeError, ~r/key not found: non_existent/, fn ->
+        Server.delete!("non_existent")
+      end
     end
 
     test "properly invalidates the cache" do
@@ -405,7 +426,16 @@ defmodule Arca.Config.ServerTest do
     setup %{test_file: test_file} do
       File.write!(test_file, "{not json")
       Cache.clear()
-      :sys.replace_state(Server, fn _ -> %{config: %{}, loaded: false} end)
+
+      # A genuinely unloaded server, from the supervisor. This used to be
+      # `:sys.replace_state(Server, fn _ -> %{config: %{}, loaded: false} end)`,
+      # which is the same backdoor AC-05.2 deleted from `lib/`, relocated into
+      # `test/` -- it hard-codes the exact internal state map, so adding a field
+      # to the server's state would silently construct a state it could never
+      # hold while this kept passing. Restarting it produces whatever `init/1`
+      # produces, by construction.
+      Supervisor.terminate_child(Arca.Config.Supervisor, Server)
+      {:ok, _pid} = Supervisor.restart_child(Arca.Config.Supervisor, Server)
 
       on_exit(fn ->
         File.write!(test_file, Jason.encode!(%{"app" => %{"name" => "TestApp"}}))
@@ -438,6 +468,47 @@ defmodule Arca.Config.ServerTest do
       assert {:ok, reloaded_config} = Server.reload()
       assert reloaded_config["app"]["name"] == "UpdatedApp"
       assert {:ok, "UpdatedApp"} = Server.get("app.name")
+    end
+  end
+
+  # From the critic pass hv authorised for AC-05.6 (finding C1). This is the
+  # write path's version of archetype AR-1, and WP-01 missed it: the read that
+  # runs immediately BEFORE the file is overwritten folded every failure into
+  # the in-memory config, so a configuration hand-edited into invalid JSON was
+  # silently discarded and replaced on the next write. No log, no error, no
+  # trace -- while the watcher, given the same file, keeps its last good config
+  # and says so.
+  describe "a config file that exists but cannot be read (AR-1, write path)" do
+    test "put refuses to overwrite an unparseable config file", %{test_file: test_file} do
+      File.write!(test_file, ~s({"app": {"name": "HandEdited" ))
+
+      log =
+        capture_log(fn ->
+          assert {:error, {:config, :load_failed, _detail}} = Server.put("app.name", "Clobber")
+        end)
+
+      assert log =~ "Refusing to overwrite"
+      assert File.read!(test_file) == ~s({"app": {"name": "HandEdited" )
+    end
+
+    test "delete refuses to overwrite an unparseable config file", %{test_file: test_file} do
+      File.write!(test_file, ~s({"app": {"name": "HandEdited" ))
+
+      capture_log(fn ->
+        assert {:error, {:config, :load_failed, _detail}} = Server.delete("app.name")
+      end)
+
+      assert File.read!(test_file) == ~s({"app": {"name": "HandEdited" )
+    end
+
+    # The ordinary first-write case: nothing on disk yet is not the same claim
+    # as something on disk that cannot be read.
+    test "put still creates the file when there is none", %{test_file: test_file} do
+      File.rm!(test_file)
+
+      assert {:ok, "Created"} = Server.put("app.name", "Created")
+      assert File.exists?(test_file)
+      assert {:ok, "Created"} = Server.get("app.name")
     end
   end
 

@@ -70,33 +70,15 @@ defmodule Arca.Config.InitHelper do
     # Set the config domain
     Application.put_env(:arca_config, :config_domain, app_name)
 
-    # Ensure config directory exists
-    with :ok <- ensure_directory_exists(config_dir),
-         :ok <- ensure_file_exists(config_file, initial_config) do
+    # The environment variables and domain above are already set, so the
+    # resolved location IS `config_file` -- which is why this can use the one
+    # implementation rather than its own copy. `ensure_directory_exists/1` and
+    # `ensure_file_exists/2` used to live here as well, byte-identical to
+    # `FileWatcher`'s (audit finding AF-12): two places to change the rule for
+    # creating a configuration location, and no way to notice when only one
+    # of them changed.
+    with :ok <- FileWatcher.ensure_config_exists(initial_config, true) do
       {:ok, config_file}
-    end
-  end
-
-  # Private helpers
-
-  defp ensure_directory_exists(dir) do
-    case File.mkdir_p(dir) do
-      :ok -> :ok
-      {:error, :eexist} -> :ok
-      {:error, reason} -> {:error, "Failed to create config directory: #{reason}"}
-    end
-  end
-
-  defp ensure_file_exists(file_path, initial_config) do
-    if !File.exists?(file_path) do
-      content = Jason.encode!(initial_config, pretty: true)
-
-      case File.write(file_path, content) do
-        :ok -> :ok
-        {:error, reason} -> {:error, "Failed to create config file: #{reason}"}
-      end
-    else
-      :ok
     end
   end
 end

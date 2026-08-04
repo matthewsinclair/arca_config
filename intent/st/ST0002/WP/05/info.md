@@ -3,7 +3,7 @@ verblock: "04 Aug 2026:v0.1: matts - Initial version"
 wp_id: WP-05
 title: "Surface and dependency pruning"
 scope: Small
-status: WIP
+status: Done
 ---
 
 # WP-05: Surface and dependency pruning

@@ -50,11 +50,17 @@ defmodule Arca.Config.FileWatcher do
       uses the path from `Arca.Config.Cfg.config_file/0`
 
   ## Returns
-    - `:ok` if file watching was started successfully
+    - `{:ok, :watching}` once the watcher is armed on the resolved file
+
+  Synchronous, like `stop_watching/0`. It used to be a cast typed `:: :ok`,
+  which means a cast to a dead watcher also answered `:ok` -- and since the
+  watcher restarts dormant and nothing but this call re-arms it, a crash left
+  external change detection off for the life of the VM with every caller having
+  been told it was on.
   """
-  @spec start_watching(String.t() | nil) :: :ok
+  @spec start_watching(String.t() | nil) :: {:ok, :watching}
   def start_watching(config_file \\ nil) do
-    GenServer.cast(__MODULE__, {:start_watching, config_file})
+    GenServer.call(__MODULE__, {:start_watching, config_file})
   end
 
   @doc """
@@ -107,57 +113,47 @@ defmodule Arca.Config.FileWatcher do
 
   @impl true
   def init(_) do
-    # Start in dormant state - no file checking until configuration is loaded
+    # Dormant until the configuration has been loaded: at application boot the
+    # start phase arms this, and there may be no config file yet.
+    #
+    # On a *restart*, though, the application is already up and the start phase
+    # will not run again -- so a watcher that crashed once used to come back
+    # dormant and stay that way forever. If a config file is already resolvable
+    # we are in that second case, and re-arm ourselves.
     {:ok,
-     %{config_file: nil, last_info: nil, write_token: nil, watching: false, check_timer: nil}}
+     %{config_file: nil, last_info: nil, write_token: nil, watching: false, check_timer: nil},
+     {:continue, :rearm_if_configured}}
   end
 
   @impl true
-  def handle_cast({:start_watching, config_file}, state) do
-    # Configuration has been loaded, start watching
-    file_to_watch = config_file || Arca.Config.Cfg.config_file()
-    file_info = if File.exists?(file_to_watch), do: get_file_info(file_to_watch), else: nil
+  def handle_continue(:rearm_if_configured, state) do
+    config_file = Arca.Config.Cfg.config_file() |> Path.expand()
 
-    # Cancel any existing timer
-    if state[:check_timer] do
-      Process.cancel_timer(state.check_timer)
+    case File.exists?(config_file) do
+      true -> {:noreply, start_watching_state(config_file, state)}
+      false -> {:noreply, state}
     end
-
-    # Schedule first check
-    timer = schedule_check()
-
-    {:noreply,
-     %{
-       state
-       | config_file: file_to_watch,
-         last_info: file_info,
-         watching: true,
-         check_timer: timer
-     }}
   end
 
-  # Legacy compatibility - handle old :start_watching atom
   @impl true
-  def handle_cast(:start_watching, state) do
-    handle_cast({:start_watching, nil}, state)
+  def handle_call({:start_watching, config_file}, _from, state) do
+    file_to_watch = config_file || Arca.Config.Cfg.config_file()
+
+    {:reply, {:ok, :watching}, start_watching_state(file_to_watch, state)}
+  end
+
+  @impl true
+  def handle_call(:stop_watching, _from, state) do
+    cancel_check(state[:check_timer])
+
+    {:reply, :ok,
+     %{config_file: nil, last_info: nil, write_token: nil, watching: false, check_timer: nil}}
   end
 
   @impl true
   def handle_cast({:register_write, token}, state) do
     # Register that we've written to the file (to avoid self-notification)
     {:noreply, %{state | write_token: token}}
-  end
-
-  @impl true
-  def handle_call(:stop_watching, _from, state) do
-    # Cancel any existing timer
-    if state[:check_timer] do
-      Process.cancel_timer(state.check_timer)
-    end
-
-    # Reset to dormant state
-    {:reply, :ok,
-     %{config_file: nil, last_info: nil, write_token: nil, watching: false, check_timer: nil}}
   end
 
   # Dormant: do not reschedule. A check already in the mailbox when watching
@@ -174,6 +170,7 @@ defmodule Arca.Config.FileWatcher do
     updated_path = Arca.Config.Cfg.config_file() |> Path.expand()
     current_info = get_file_info(updated_path)
 
+    report_lost_file(current_info, last_info, updated_path)
     reload_if_changed(current_info, last_info)
 
     {:noreply,
@@ -221,16 +218,53 @@ defmodule Arca.Config.FileWatcher do
     end
   end
 
+  # The one place that arms the watcher, used by `start_watching/1` and by the
+  # re-arm after a supervisor restart.
+  defp start_watching_state(file_to_watch, state) do
+    cancel_check(state[:check_timer])
+
+    %{
+      state
+      | config_file: file_to_watch,
+        last_info: get_file_info(file_to_watch),
+        watching: true,
+        check_timer: schedule_check()
+    }
+  end
+
+  defp cancel_check(nil), do: :ok
+  defp cancel_check(timer), do: Process.cancel_timer(timer)
+
   defp schedule_check do
     Process.send_after(self(), :check_file, @check_interval)
   end
 
+  # A file we cannot stat reads as `nil`, and `file_changed?(nil, _)` is false --
+  # so "unreadable" and "unmodified" produce the same answer. That silence is
+  # reported exactly once, on the transition, by `report_lost_file/3`: logging
+  # on every tick would bury the signal under a line per second.
   defp get_file_info(path) do
     case File.stat(path) do
       {:ok, info} -> info
-      _ -> nil
+      {:error, _reason} -> nil
     end
   end
+
+  # Losing sight of the file is an event. Regaining it is handled already: the
+  # next successful stat differs from `nil`, so `file_changed?/2` reports a
+  # change and the reload runs.
+  defp report_lost_file(nil, nil, _path), do: :ok
+
+  defp report_lost_file(nil, _last_info, path) do
+    require Logger
+
+    Logger.warning(
+      "Configuration file #{path} can no longer be read; keeping the last known configuration " <>
+        "and continuing to watch."
+    )
+  end
+
+  defp report_lost_file(_current_info, _last_info, _path), do: :ok
 
   defp file_changed?(nil, _), do: false
   defp file_changed?(_, nil), do: true

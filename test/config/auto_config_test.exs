@@ -45,86 +45,52 @@ defmodule Arca.Config.AutoConfigTest do
     {:ok, %{test_dir: test_dir, config_file: Path.join(test_dir, "test_config.json")}}
   end
 
-  test "apply_env_overrides applies environment variables to config file", %{
+  # Both tests below used to write JSON with File.write! and then assert on the
+  # values they had just written -- the first called no Arca.Config function at
+  # all, and its own comment said so ("directly manipulate config file rather
+  # than using the Arca.Config.apply_env_overrides() which causes the timing
+  # issues"). They proved that Jason round-trips, would have passed with lib/
+  # deleted, and carried names claiming behaviour they never exercised. That is
+  # audit finding AF-38; the critic pass caught that it had survived.
+  #
+  # The overrides are real: setup exports TEST_APP_CONFIG_OVERRIDE_DATABASE_HOST
+  # and two others, and load_config_phase/0 is what applies them.
+  test "load_config_phase applies environment overrides to the loaded config", %{
     config_file: config_file
   } do
-    # Create an initial config file
-    initial_config = %{
-      "database" => %{
-        "host" => "initial-host"
-      }
-    }
+    File.write!(config_file, Jason.encode!(%{"database" => %{"host" => "initial-host"}}))
 
-    File.write!(config_file, Jason.encode!(initial_config, pretty: true))
-
-    # Start with a controlled environment
     ensure_config_processes()
 
-    # Here's our change - directly manipulate config file rather than using the
-    # Arca.Config.apply_env_overrides() which causes the timing issues
-    new_config = %{
-      "database" => %{
-        "host" => "localhost"
-      },
-      "server" => %{
-        "port" => 5432
-      },
-      "debug" => %{
-        "enabled" => true
-      }
-    }
+    assert :ok = Arca.Config.load_config_phase()
 
-    # Write the config directly to file
-    File.write!(config_file, Jason.encode!(new_config, pretty: true))
+    # Through the API, not by reading the file back.
+    assert {:ok, "localhost"} = Arca.Config.get("database.host")
+    assert {:ok, 5432} = Arca.Config.get("server.port")
+    assert {:ok, true} = Arca.Config.get("debug.enabled")
 
-    # Verify the config was written correctly
-    config_content = File.read!(config_file)
-    config = Jason.decode!(config_content)
-
-    # Verify the values were applied
-    assert config["database"]["host"] == "localhost"
-    assert config["server"]["port"] == 5432
-    assert config["debug"]["enabled"] == true
+    # And persisted, so the next process to start sees them too.
+    assert %{"database" => %{"host" => "localhost"}} =
+             config_file |> File.read!() |> Jason.decode!()
   end
 
-  test "environment overrides don't erase existing config values", %{config_file: config_file} do
-    # Create an initial config file with some nested values
-    initial_config = %{
-      "database" => %{
-        "host" => "initial-host",
-        "username" => "dbuser",
-        "password" => "secret"
-      }
-    }
+  test "an override replaces its own key and leaves its siblings alone", %{
+    config_file: config_file
+  } do
+    File.write!(
+      config_file,
+      Jason.encode!(%{
+        "database" => %{"host" => "initial-host", "username" => "dbuser", "password" => "secret"}
+      })
+    )
 
-    File.write!(config_file, Jason.encode!(initial_config, pretty: true))
-
-    # Ensure we have a proper environment
     ensure_config_processes()
 
-    # Simulate environment override by modifying only one value
-    updated_config = %{
-      "database" => %{
-        "host" => "localhost",
-        "username" => "dbuser",
-        "password" => "secret"
-      }
-    }
+    assert :ok = Arca.Config.load_config_phase()
 
-    # Write the config directly to file
-    File.write!(config_file, Jason.encode!(updated_config, pretty: true))
-
-    # Force reload
-    {:ok, _} = Arca.Config.Server.reload()
-
-    # Read the config file directly to verify the changes
-    config_content = File.read!(config_file)
-    config = Jason.decode!(config_content)
-
-    # Verify only the override was applied, other values remain
-    assert config["database"]["host"] == "localhost"
-    assert config["database"]["username"] == "dbuser"
-    assert config["database"]["password"] == "secret"
+    assert {:ok, "localhost"} = Arca.Config.get("database.host")
+    assert {:ok, "dbuser"} = Arca.Config.get("database.username")
+    assert {:ok, "secret"} = Arca.Config.get("database.password")
   end
 
   # `setup_default_config/2` creates `.<app>/` relative to the working

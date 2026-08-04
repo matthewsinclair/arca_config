@@ -210,22 +210,22 @@ defmodule Arca.Config.Cfg.Test do
         Arca.Config.Test.Support.restore_env(app_specific_file_var, original_file)
         File.rm_rf!(config_dir)
       end)
+
+      {:ok, %{config_dir: config_dir}}
     end
 
-    test "config file path and name" do
-      config_pathname = Cfg.config_pathname()
-      config_filename = Cfg.config_filename()
-      config_file = Cfg.config_file()
-
-      assert config_pathname != nil
-      assert config_filename != nil
-      assert config_file != nil
-      # Path joining may result in path expansion, so we can't use strict equality
-      # Instead, check that config_file ends with the expected path pattern
-      assert String.ends_with?(
-               config_file,
-               Path.join(Path.basename(config_pathname), config_filename)
-             )
+    # The setup above knows the concrete directory, so this asserts it. It used
+    # to assert three `!= nil`s and then that `config_file/0` ended with
+    # `config_pathname/0` joined to `config_filename/0` -- a restatement of
+    # `config_file/0`'s implementation, which passes for any self-consistent
+    # resolution including one pointing at entirely the wrong directory. That is
+    # the AF-25 bug class this module exists to catch.
+    test "config file path and name resolve to the configured location", %{
+      config_dir: config_dir
+    } do
+      assert Cfg.config_pathname() == config_dir
+      assert Cfg.config_filename() == "config.json"
+      assert Cfg.config_file() == Path.join(config_dir, "config.json")
     end
 
     # Previously asserted string identity against a trailing slash, which is why
@@ -319,56 +319,39 @@ defmodule Arca.Config.Cfg.Test do
       assert id_from_atom == "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON"
     end
 
-    test "put config property" do
-      # Use a simple config file with just a timestamp attribute
-      temp_dir = System.tmp_dir!()
-      System.put_env("ARCA_CONFIG_PATH", temp_dir)
-      System.put_env("ARCA_CONFIG_FILE", "timestamp.json")
-
-      # Make sure file exists (and empty)
-      config_file = Path.join(temp_dir, "timestamp.json")
-      File.write!(config_file, "{}")
-
+    # Both tests below used to open by setting ARCA_CONFIG_PATH and
+    # ARCA_CONFIG_FILE -- the GENERIC tier -- while this describe's setup had
+    # already set the domain-specific pair, which outranks it. Their location
+    # setup therefore did nothing at all, and `/tmp/timestamp.json` was written,
+    # never read, and deleted. That is AF-23's exact shape, reappearing inside
+    # the suite that fixed it, and it meant two tests that looked like location
+    # tests could not catch a location regression. They also cleaned up in the
+    # test body rather than `on_exit`, so a failed assertion leaked both
+    # variables into every test that ran after them.
+    #
+    # They write and read through the configured location, which is what they
+    # were always trying to say.
+    test "put and get a config property" do
       timestamp_in = DateTime.to_string(DateTime.utc_now())
 
-      # Put a new value into the config and ensure that works
-      assert {:ok, value} = Cfg.put(:timestamp, timestamp_in)
-      assert value == timestamp_in
-
-      # Grab that value back from the config and ensure that works
-      assert {:ok, timestamp_out} = Cfg.get(:timestamp)
-      assert timestamp_out == timestamp_in
-
-      # Remove the file now we're done with it
-      File.rm!(config_file)
-      System.delete_env("ARCA_CONFIG_PATH")
-      System.delete_env("ARCA_CONFIG_FILE")
+      assert {:ok, ^timestamp_in} = Cfg.put(:timestamp, timestamp_in)
+      assert {:ok, ^timestamp_in} = Cfg.get(:timestamp)
     end
 
-    test "put! config property" do
-      # Use a simple config file with just a timestamp attribute
-      temp_dir = System.tmp_dir!()
-      System.put_env("ARCA_CONFIG_PATH", temp_dir)
-      System.put_env("ARCA_CONFIG_FILE", "timestamp.json")
-
-      # Make sure file exists (and empty)
-      config_file = Path.join(temp_dir, "timestamp.json")
-      File.write!(config_file, "{}")
-
+    test "put! and get! a config property" do
       timestamp_in = DateTime.to_string(DateTime.utc_now())
 
-      # Put a new value into the config and ensure that works
-      value = Cfg.put!(:timestamp, timestamp_in)
-      assert value == timestamp_in
+      assert Cfg.put!(:timestamp, timestamp_in) == timestamp_in
+      assert Cfg.get!(:timestamp) == timestamp_in
+    end
 
-      # Grab that value back from the config and ensure that works
-      timestamp_out = Cfg.get!(:timestamp)
-      assert timestamp_out == timestamp_in
+    # The value really landed in the configured file, not merely in memory.
+    test "a put through Cfg lands in the configured location", %{config_dir: config_dir} do
+      Cfg.put!(:timestamp, "pinned")
 
-      # Remove the file now we're done with it
-      File.rm!(config_file)
-      System.delete_env("ARCA_CONFIG_PATH")
-      System.delete_env("ARCA_CONFIG_FILE")
+      on_disk = Path.join(config_dir, "config.json") |> File.read!() |> Jason.decode!()
+
+      assert on_disk["timestamp"] == "pinned"
     end
 
     test "config_data_pathname" do

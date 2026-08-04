@@ -47,12 +47,16 @@ defmodule Arca.Config.Map do
   def get(%__MODULE__{}, key, default \\ nil) do
     case Server.get(key) do
       {:ok, value} -> value
-      {:error, _} -> default
+      {:error, _reason} -> default
     end
   end
 
   @doc """
   Gets a value from a nested path in the configuration.
+
+  The list form of `get/3`. `Arca.Config.Server.get/1` normalises both a
+  dot-separated string and a list of keys, so these were one function written
+  twice with a different parameter name.
 
   ## Parameters
     - `config`: The configuration map
@@ -63,12 +67,7 @@ defmodule Arca.Config.Map do
     - The value if found, or the default value
   """
   @spec get_in(t(), [any()], any()) :: any()
-  def get_in(%__MODULE__{}, keys, default \\ nil) do
-    case Server.get(keys) do
-      {:ok, value} -> value
-      {:error, _} -> default
-    end
-  end
+  def get_in(%__MODULE__{} = config, keys, default \\ nil), do: get(config, keys, default)
 
   @doc """
   Puts a value in the configuration.
@@ -95,6 +94,9 @@ defmodule Arca.Config.Map do
   @doc """
   Puts a value at a nested path in the configuration.
 
+  The list form of `put/3`, for the same reason `get_in/3` is the list form of
+  `get/3` -- including the raise on a failed write.
+
   ## Parameters
     - `config`: The configuration map
     - `keys`: A list of keys to traverse
@@ -104,15 +106,7 @@ defmodule Arca.Config.Map do
     - A new configuration map with the updated value
   """
   @spec put_in(t(), [any()], any()) :: t()
-  def put_in(%__MODULE__{} = config, keys, value) do
-    case Server.put(keys, value) do
-      {:ok, _} ->
-        config
-
-      {:error, reason} ->
-        raise RuntimeError, message: "Failed to put config: #{Error.message(reason)}"
-    end
-  end
+  def put_in(%__MODULE__{} = config, keys, value), do: put(config, keys, value)
 
   @doc """
   Checks if a key exists in the configuration.
