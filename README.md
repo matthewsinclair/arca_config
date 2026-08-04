@@ -10,7 +10,7 @@ by adding `arca_config` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:arca_config, "~> 0.2.0"}
+    {:arca_config, "~> 0.3.0"}
   ]
 end
 ```
