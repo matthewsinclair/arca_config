@@ -8,7 +8,7 @@ generator: intent todo
   - [x] 01: Truthful returns: persistence failures surface
   - [ ] 02: One lookup path, one dialect, complete facade
   - [x] 03: Notification and watcher coherence
-  - [ ] 04: Location model: precedence, domain, isolation
+  - [x] 04: Location model: precedence, domain, isolation
   - [ ] 05: Surface and dependency pruning
   - [ ] 06: Downstream verification and release
 

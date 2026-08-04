@@ -57,14 +57,14 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AC-03.5 An external edit landing inside the post-write suppression window is not lost (token identity compared, or equivalent re-check)
 - AC-03.6 After `put/2` returns, a `get/1` of any ancestor of the written path reflects the write (cache coherence)
 
-### WP-04 -- Location model (status: TODO)
+### WP-04 -- Location model (status: DONE 2026-08-04, five ATs green + both non-test ACs evidenced)
 
 - AC-04.1 (ruling R2) Precedence is ruled, implemented, and documented identically in README and moduledoc, with a single test asserting the full chain end-to-end
 - AC-04.2 `config_domain/0` is deterministic: explicit configuration or a documented stable default; the started-applications heuristic (probe P1: `:elixir_uuid`) is removed
 - AC-04.3 Location resolution is stable within a session: no file-existence flip between reads and writes
-- AC-04.4 (non-test) README matches behaviour: precedence order, actual default paths (CWD-relative or ruled otherwise), `.env` section corrected to project-local scope, one version string -- evidence: README diff reviewed against AC-04.1 test -- satisfied: no
+- AC-04.4 (non-test) README matches behaviour: precedence order, actual default paths (CWD-relative or ruled otherwise), `.env` section corrected to project-local scope, one version string -- evidence: README diff reviewed against AC-04.1 test; precedence table now matches `Cfg`'s moduledoc and the test line for line, the location story says CWD-relative, the `.env` section says plainly that it is this repo's own dev setup and not a library feature, and the version lives only in mix.exs (`config.exs`'s copy removed, the CLI spec reads `Application.spec/2`, README's two install blocks reconciled) -- satisfied: yes
 - AC-04.5 After `mix test`, the repo tree is clean: no writes to the repo root, its parent, or HOME; `git status --porcelain` empty; env mutations restored exactly (superset-restore fixed; doctests clean up)
-- AC-04.6 (non-test) Each remaining `async: false` carries a reason comment, or the module is `async: true` -- evidence: grep over test/ -- satisfied: no
+- AC-04.6 (non-test) Each remaining `async: false` carries a reason comment, or the module is `async: true` -- evidence: grep over test/ -- every one of the 11 modules carries a specific reason naming the global state it touches (config domain, location env vars, the named server/watcher/cache processes, the working directory), and none is boilerplate. All 11 stay `async: false`: the location model is still process-global, which is AR-4's own finding rather than something WP-04 could remove -- satisfied: yes
 - AC-04.7 `config/.env` no longer overrides shell-exported config vars during config evaluation: an env var exported by the developer or CI wins over the checked-in dev default, and the resolution path is identical on a fresh clone (which has no `config/.env`)
 
 ### WP-05 -- Surface and dependency pruning (status: TODO)
@@ -119,12 +119,12 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### WP-04
 
-- AT-04.1 test/config/cfg_test.exs::"precedence chain end-to-end" -- covers AC-04.1 -- status: to-write (red-first)
-- AT-04.2 test/config/cfg_test.exs::"config_domain deterministic without heuristic" -- covers AC-04.2 -- status: to-write (red-first)
-- AT-04.3 test/config/cfg_test.exs::"location stable across file creation" -- covers AC-04.3 -- status: to-write (red-first)
-- AT-04.4 test/support/isolation_check.exs::"suite leaves repo tree and env exactly as found" -- covers AC-04.5 -- status: to-write (red-first)
-- AT-04.5 test/config/cfg_test.exs::"shell-exported config var beats the checked-in dev default" -- covers AC-04.7 -- status: to-write (red-first)
-- Coverage: AC-04.1/.2/.3/.5/.7 test-covered; AC-04.4/.6 non-test with evidence on the AC line
+- AT-04.1 test/config/cfg_test.exs::"precedence chain end-to-end" -- covers AC-04.1 -- status: green
+- AT-04.2 test/config/cfg_test.exs::"config_domain deterministic without heuristic" -- covers AC-04.2 -- status: green
+- AT-04.3 test/config/cfg_test.exs::"location stable across file creation" -- covers AC-04.3 -- status: green
+- AT-04.4 **test/isolation_test.exs**::"suite leaves repo tree and env exactly as found" -- covers AC-04.5 -- status: green (path clarified from `test/support/isolation_check.exs`: ExUnit only runs `*_test.exs` under `test/`, so the drafted path would never have executed -- vc's own reachability lens, applied to my own contract. The comparison helper lives at `test/support/isolation.ex` and the standing guard is in `test/test_helper.exs`)
+- AT-04.5 test/config/cfg_test.exs::"shell-exported config var beats the checked-in dev default" -- covers AC-04.7 -- status: green
+- Coverage: AC-04.1/.2/.3/.5/.7 test-covered; AC-04.4/.6 non-test with evidence on the AC line. All red first; landed 2026-08-04.
 
 ### WP-05
 

@@ -1,4 +1,6 @@
 defmodule Arca.Config.CacheTest do
+  # async: false -- the cache is one named process owning one named ETS table,
+  # cleared in setup and terminated outright by the unavailability test.
   use ExUnit.Case, async: false
 
   alias Arca.Config.Cache

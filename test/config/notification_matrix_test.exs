@@ -1,4 +1,6 @@
 defmodule Arca.Config.NotificationMatrixTest do
+  # async: false -- counts how many times each notification channel fires, so any
+  # concurrent mutation of the shared configuration would show up as an extra.
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog

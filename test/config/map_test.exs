@@ -1,4 +1,6 @@
 defmodule Arca.Config.MapTest do
+  # async: false -- the Map facade reads and writes through the shared
+  # configuration server and its single on-disk file.
   use ExUnit.Case, async: false
 
   alias Arca.Config.Map, as: ConfigMap

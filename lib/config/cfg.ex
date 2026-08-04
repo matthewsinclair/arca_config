@@ -2,16 +2,32 @@ defmodule Arca.Config.Cfg do
   @moduledoc """
   Provides a simple programmatic API to a set of configuration properties held in a JSON config file.
 
-  This module automatically derives configuration paths and filenames from the config domain
-  if not explicitly configured. The config domain is determined in the following order:
+  This module derives configuration paths and filenames from the config domain.
+  The domain is `Application.get_env(:arca_config, :config_domain)` if set, and
+  `:arca_config` otherwise. It is not guessed.
 
-  1. **Explicit configuration**: `Application.put_env(:arca_config, :config_domain, :my_app)`
-  2. **Auto-detection**: Based on the parent application context
-  3. **Default**: `:arca_config`
+  ## Where the configuration file lives
 
-  For example, if your application is named `:my_app` and you set the config domain explicitly,
-  the default configuration path will be `~/.my_app/` and will look for environment variables
-  like `MY_APP_CONFIG_PATH`.
+  One directory and one filename are resolved, each from the first tier that
+  answers:
+
+  | Priority | Directory                                       | Filename                                        |
+  | ---------- | ------------------------------------------------- | ------------------------------------------------- |
+  | 1 highest | `<DOMAIN>_CONFIG_PATH` env var                  | `<DOMAIN>_CONFIG_FILE` env var                  |
+  | 2        | `ARCA_CONFIG_PATH` env var                       | `ARCA_CONFIG_FILE` env var                       |
+  | 3        | `config :arca_config, config_path:`             | `config :arca_config, config_file:`             |
+  | 4 lowest | `.<domain>/`, relative to the working directory | `config.json`                                    |
+
+  `<DOMAIN>` is the config domain upcased, so a domain of `:my_app` reads
+  `MY_APP_CONFIG_PATH`. **The domain-specific variable wins over the generic
+  one**, which is the opposite of what this library's README claimed for a long
+  time, and is why a downstream project's test isolation set `ARCA_CONFIG_PATH`
+  across nine files and never once took effect.
+
+  The resolved location does not depend on which files exist. `config_file/0`
+  returns the configured location whether or not anything is there yet, so a
+  write creates the file the caller asked for rather than being redirected
+  somewhere else the moment the configured one is missing.
 
   ## Important Notes
 
@@ -20,78 +36,23 @@ defmodule Arca.Config.Cfg do
   - The config domain is checked on every access to ensure consistency
   """
 
-  @doc false
+  @doc """
+  The configuration domain: either what the parent application configured, or
+  `:arca_config`.
+
+  The domain decides the environment variable prefix and the default
+  directory name, so it has to be the same answer every time it is asked. It
+  used to be guessed when unset -- by walking the `$callers` process dictionary
+  and then taking the first non-system entry from `Application.started_applications/0`
+  -- which returned whichever application happened to be started and in which
+  order. A probe resolved it to `:elixir_uuid`, an unused dependency; running
+  the test suite resolved it to `:ex_unit`. Set it explicitly:
+
+      Application.put_env(:arca_config, :config_domain, :my_app)
+  """
+  @spec config_domain() :: atom()
   def config_domain do
-    # Always check explicit configuration first (highest priority)
-    # This ensures parent applications can override the domain at any time
-    explicit_domain = Application.get_env(:arca_config, :config_domain)
-
-    if explicit_domain do
-      explicit_domain
-    else
-      # Auto-detect domain without caching
-      try_detect_parent_app()
-    end
-  end
-
-  defp try_detect_parent_app do
-    # Get the OTP application for the calling module
-    caller_app =
-      case Process.get(:"$callers") do
-        # If we have caller information
-        [caller | _] when is_pid(caller) ->
-          # Get the application for the calling process
-          case Process.info(caller, :dictionary) do
-            {:dictionary, dict} ->
-              # Look up the caller's application
-              case Keyword.get(dict, :"$initial_call") do
-                {mod, _, _} -> Application.get_application(mod)
-                _ -> nil
-              end
-
-            _ ->
-              nil
-          end
-
-        _ ->
-          nil
-      end
-
-    # If we found a caller app and it's not arca_config itself, use it
-    if caller_app && caller_app != :arca_config do
-      caller_app
-    else
-      # Try to find the parent application by examining the application tree
-      # Get all running applications
-      running_apps = Application.started_applications() |> Enum.map(fn {app, _, _} -> app end)
-
-      # If arca_config is the only running app, use it
-      if running_apps == [:arca_config] || !Enum.member?(running_apps, :arca_config) do
-        :arca_config
-      else
-        # Try to find a non-system app that isn't arca_config
-        system_apps = [
-          :kernel,
-          :stdlib,
-          :elixir,
-          :logger,
-          :arca_config,
-          :compiler,
-          :crypto,
-          :jason,
-          :iex
-        ]
-
-        non_system_apps = running_apps -- system_apps
-
-        case non_system_apps do
-          # Fallback if only system apps are running
-          [] -> :arca_config
-          # Use the first non-system app
-          [app | _] -> app
-        end
-      end
-    end
+    Application.get_env(:arca_config, :config_domain, :arca_config)
   end
 
   @doc false
@@ -168,48 +129,26 @@ defmodule Arca.Config.Cfg do
   """
   @spec config_file() :: String.t()
   def config_file do
-    home_path = config_pathname()
-    local_path = local_config_pathname()
-    filename = config_filename()
-
-    # Guard against nil values
-    if home_path && filename do
-      # IMPORTANT: Always use Path.expand on path components before joining
-      # This prevents creating recursive paths like .multiplyer/Users/matts/.multiplyer/
-      expanded_home_path = Path.expand(home_path)
-      home_config = Path.join(expanded_home_path, filename)
-
-      # Fully expand the final path to ensure there are no relative components
-      expanded_home_config = Path.expand(home_config)
-
-      if local_path && filename do
-        expanded_local_path = Path.expand(local_path)
-        local_config = Path.join(expanded_local_path, filename)
-
-        # Fully expand the local config path as well
-        expanded_local_config = Path.expand(local_config)
-
-        cond do
-          File.exists?(expanded_home_config) -> expanded_home_config
-          true -> expanded_local_config
-        end
-      else
-        expanded_home_config
-      end
-    else
-      # Fallback to default location - fully expanded
-      Path.expand(Path.join(System.tmp_dir!(), "config.json"))
-    end
+    config_pathname()
+    |> Path.join(config_filename())
+    |> Path.expand()
   end
 
   @doc """
-  Get path for the configuration file.
+  Get the directory holding the configuration file.
 
-  Looks for configuration in the following order:
-  1. Environment variable derived from parent app name (e.g., `MY_APP_CONFIG_PATH`)
-  2. Environment variable named `ARCA_CONFIG_PATH`
-  3. Application config under `:arca_config, :config_path`
-  4. Default path based on parent application name
+  Resolved in this order, highest priority first:
+
+  1. `<DOMAIN>_CONFIG_PATH` -- environment variable derived from the config
+     domain (eg `MY_APP_CONFIG_PATH`)
+  2. `ARCA_CONFIG_PATH` -- generic environment variable
+  3. `Application.get_env(:arca_config, :config_path)`
+  4. `default_config_path/0` -- `.<domain>/`, relative to the working directory
+
+  The result is always an absolute path. Every tier is expanded the same way:
+  values from environment variables used to be returned verbatim, so that a
+  test asserting string identity against a trailing slash would pass, while
+  every other tier was expanded.
 
   ## Examples
       iex> app_specific_env_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_PATH"
@@ -220,27 +159,21 @@ defmodule Arca.Config.Cfg do
   """
   @spec config_pathname() :: String.t()
   def config_pathname do
-    app_specific_env_var = "#{env_var_prefix()}_CONFIG_PATH"
-    default_arca_env_var = "ARCA_CONFIG_PATH"
-
-    path =
-      System.get_env(app_specific_env_var) ||
-        System.get_env(default_arca_env_var) ||
-        Application.get_env(:arca_config, :config_path) ||
-        default_config_path()
-
-    # Return path exactly as found in environment variable to ensure tests pass
-    # that expect exact string matching with trailing slashes preserved
-    if System.get_env(app_specific_env_var) || System.get_env(default_arca_env_var) do
-      path
-    else
-      # Only expand path when not from environment variable
-      Path.expand(path)
-    end
+    (System.get_env("#{env_var_prefix()}_CONFIG_PATH") ||
+       System.get_env("ARCA_CONFIG_PATH") ||
+       Application.get_env(:arca_config, :config_path) ||
+       default_config_path())
+    |> Path.expand()
   end
 
   @doc """
   Get path for the local configuration file (in current working directory).
+
+  **Not part of configuration-file resolution.** `config_file/0` resolves one
+  location, from `config_pathname/0`, and stays there. It used to return this
+  path instead whenever the configured file did not happen to exist yet, so a
+  write to a configured-but-absent file landed somewhere the caller never asked
+  for -- in one probe, inside the repository itself.
 
   Looks for configuration in the following order:
   1. Environment variable derived from parent app name (e.g., `MY_APP_LOCAL_CONFIG_PATH`)

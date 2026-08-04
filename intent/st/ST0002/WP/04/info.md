@@ -3,7 +3,7 @@ verblock: "04 Aug 2026:v0.1: matts - Initial version"
 wp_id: WP-04
 title: "Location model: precedence, domain, isolation"
 scope: Small
-status: Not Started
+status: Done
 ---
 
 # WP-04: Location model: precedence, domain, isolation

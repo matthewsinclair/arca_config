@@ -1,4 +1,6 @@
 defmodule Arca.Config.SwitchLocationTest do
+  # async: false -- switching the config location rewrites the location
+  # environment variables for the whole VM, which is the mechanism under test.
   use ExUnit.Case, async: false
 
   alias Arca.Config

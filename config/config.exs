@@ -12,7 +12,6 @@ config :arca_config,
   name: "arca_config",
   about: "🛠️ Arca Config",
   description: "A simple file-based configurator for Elixir apps",
-  version: "0.1.0",
   author: "hello@arca.io",
   url: "https://arca.io",
   config_domain: :arca_config

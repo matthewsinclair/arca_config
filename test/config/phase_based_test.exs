@@ -1,4 +1,7 @@
 defmodule Arca.Config.PhaseBasedTest do
+  # async: false -- runs the application's start phase, which sets the config
+  # domain, applies environment overrides and starts the file watcher, all
+  # process-global.
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
@@ -18,7 +21,10 @@ defmodule Arca.Config.PhaseBasedTest do
     System.delete_env("ARCA_CONFIG_PATH")
     System.delete_env("ARCA_CONFIG_FILE")
 
-    # Clean up application config
+    # Clean up application config, restoring it rather than deleting it: this
+    # module sets the domain to `:test_app`, and leaving it that way sends every
+    # later location resolution to `.test_app/` in the working directory.
+    original_domain = Application.get_env(:arca_config, :config_domain)
     Application.delete_env(:arca_config, :config_domain)
 
     # Reset FileWatcher to dormant state
@@ -30,7 +36,7 @@ defmodule Arca.Config.PhaseBasedTest do
         Arca.Config.Test.Support.restore_env(env_var_for(key), value)
       end
 
-      Application.delete_env(:arca_config, :config_domain)
+      Arca.Config.Test.Support.restore_app_env(:config_domain, original_domain)
       # Reset FileWatcher to dormant state after test
       send(Arca.Config.FileWatcher, {:reset_to_dormant, self()})
     end)
@@ -77,7 +83,23 @@ defmodule Arca.Config.PhaseBasedTest do
     end
   end
 
+  # This asserts the *generic* env-var tier, which only works when the
+  # domain-specific tier is empty -- app-specific beats generic (ruling R2). It
+  # used to pass without clearing it, because the domain was guessed from the
+  # started applications and came back `:ex_unit`, so the app-specific variable
+  # it was competing with was `EX_UNIT_CONFIG_PATH` and nothing set that. With a
+  # deterministic domain the real variable is in play, so the test has to say so.
   test "system loads config from environment-specified paths" do
+    original_app_specific_path = System.get_env("ARCA_CONFIG_CONFIG_PATH")
+    original_app_specific_file = System.get_env("ARCA_CONFIG_CONFIG_FILE")
+    System.delete_env("ARCA_CONFIG_CONFIG_PATH")
+    System.delete_env("ARCA_CONFIG_CONFIG_FILE")
+
+    on_exit(fn ->
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_CONFIG_PATH", original_app_specific_path)
+      Arca.Config.Test.Support.restore_env("ARCA_CONFIG_CONFIG_FILE", original_app_specific_file)
+    end)
+
     # Create test config file with unique name to avoid conflicts
     test_id = :rand.uniform(10000)
     test_path = Path.join(System.tmp_dir!(), "arca_phase_test_#{test_id}")

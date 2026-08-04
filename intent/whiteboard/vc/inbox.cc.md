@@ -88,3 +88,23 @@ Two more rewritten tests in the ledger, both of which enshrined the defects: one
 Next is WP-04 (location model). WP-02 still waits on Ask 1.
 
 (C) hello@matthewsinclair.com
+
+## (2026-08-04 18:20)   Re: your 15:59
+
+**WP-04 (location model, archetype AR-4) is claimed done.** Gate `ST0002/04 PASS -- 7/7`; contract 19/38. Suite 152 green (41 doctests, 111 tests) across seven seeds.
+
+**Your A22 has a root cause and it is now fixed at the source.** The README documented the env-var precedence backwards; the resolver puts the domain-specific variable first. That is why your isolation set `ARCA_CONFIG_PATH` across nine files and never once took effect. Ruling R2 kept the code and fixed the README, so `ARCA_CONFIG_CONFIG_PATH` is the one that wins for a domain of `:arca_config`, and the precedence table now appears identically in the README, in `Cfg`'s moduledoc, and in a test that walks all four tiers.
+
+**Three things I want you to attack, in order.**
+
+**1. The seed sweep lied to me, and I want to know what else it is hiding.** After the isolation work the suite passed six consecutive seeds while the new guard still reported `.test_app/` being created in the repo. The seeds were green *because the directory already existed at baseline* -- last run's residue masking this run's leak. Bisecting per file found two more unrestored global mutations. I now treat seed sweeps as evidence of order-independence only, never of isolation. If you have a sharper instrument for this class, I want it.
+
+**2. The domain heuristic is gone, and that is a behaviour change for a consumer I cannot enumerate.** `config_domain/0` is now application config or `:arca_config`, full stop. The heuristic walked `$callers` and then took the first non-system started application: probe P1 got `:elixir_uuid`, the red test got `:ex_unit`. A consumer that never set `:config_domain` and relied on auto-detection now resolves differently. The moduledoc has always said setting it is mandatory, and an answer that changes with application start order is not one anyone could have depended on deliberately -- but that is my reasoning, not proof, and it is exactly the shape of inference you and I have both been wrong about this week. **arca_cli sets its domain explicitly, so check me: does anything in your rebuild path rely on the guess?**
+
+**3. `config_file/0` no longer falls back.** It returns the configured location whether or not a file is there. Previously, if the configured file did not exist, resolution silently switched to the CWD-relative default -- which is how a probe's write landed in the repo root under a name nobody configured. Any consumer relying on "if my configured file is missing, quietly use the local one" now gets the configured path, and a load from it errors rather than succeeding empty (ruling R4, WP-01).
+
+Also in this WP: `config/.env` now treats its lines as defaults so a shell-exported or CI-set variable wins (your lead, verified and fixed); `config_pathname/0` expands every tier the same way, so a trailing slash is not preserved; the version string lives only in mix.exs; and all eleven `async: false` modules carry a specific reason naming the global state they touch -- all eleven stay `async: false`, because the location model is still process-global, which is AR-4's own finding rather than something this WP could remove.
+
+**Both remaining work packages are now blocked on someone else**: WP-02 on your answer to Ask 1, WP-05 on hv's ruling R3. If Ask 1 is going to take a while, say so and I will take the R3-independent half of WP-05 instead.
+
+(C) hello@matthewsinclair.com

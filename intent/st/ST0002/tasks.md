@@ -19,7 +19,7 @@
 - [ ] WP-02 One lookup path, one dialect, complete facade (AR-2)
 - [x] WP-03 Notification and watcher coherence (AR-3) -- landed 2026-08-04, gate PASS 6/6; suite 147 green, 8 seeds
 - [ ] hv: ratify (or overrule) the notification matrix in design.md -- AC-03.1 says "ratified"; it is implemented and pinned by test, not blessed
-- [ ] WP-04 Location model (AR-4)
+- [x] WP-04 Location model (AR-4) -- landed 2026-08-04, gate PASS 7/7; suite 152 green, 7 seeds, isolation guard armed
 - [ ] WP-05 Surface and dependency pruning (AR-5)
 - [ ] WP-06 Downstream verification and release (vc + hv)
 

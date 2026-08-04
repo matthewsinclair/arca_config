@@ -1,4 +1,6 @@
 defmodule Arca.Config.ServerTest do
+  # async: false -- exercises the single named configuration server against one
+  # on-disk file, and switches the config domain inside one describe block.
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
@@ -138,10 +140,22 @@ defmodule Arca.Config.ServerTest do
       original_config_file = Application.get_env(:arca_config, :config_file)
       original_domain = Application.get_env(:arca_config, :config_domain)
 
-      # Save original test_app config settings
+      # Switching the domain changes which environment variables are consulted,
+      # so point the new domain at this block's temporary directory. Without
+      # that, resolution fell through to the lowest tier -- `.test_app/`
+      # relative to the working directory -- and these tests wrote into the
+      # repository.
+      original_test_app_path = System.get_env("TEST_APP_CONFIG_PATH")
+      original_test_app_file = System.get_env("TEST_APP_CONFIG_FILE")
+
       Application.put_env(:arca_config, :config_domain, :test_app)
+      System.put_env("TEST_APP_CONFIG_PATH", test_dir)
+      System.put_env("TEST_APP_CONFIG_FILE", "test_config.json")
 
       on_exit(fn ->
+        Arca.Config.Test.Support.restore_env("TEST_APP_CONFIG_PATH", original_test_app_path)
+        Arca.Config.Test.Support.restore_env("TEST_APP_CONFIG_FILE", original_test_app_file)
+
         # Restore original environment variables (delete when originally unset).
         Arca.Config.Test.Support.restore_env(app_specific_path_var, original_path_env)
         Arca.Config.Test.Support.restore_env(app_specific_file_var, original_file_env)
@@ -183,9 +197,11 @@ defmodule Arca.Config.ServerTest do
       # Force a reload to pick up new config location
       Server.reload()
 
-      # Force Application.get_env to return the paths we want
-      Application.put_env(:arca_config, :config_path, absolute_path)
-      Application.put_env(:arca_config, :config_file, "absolute_test.json")
+      # Point the location at the absolute path. This used to set application
+      # config, which is the third tier and was shadowed the moment this block
+      # started setting the domain's own environment variables.
+      System.put_env("TEST_APP_CONFIG_PATH", absolute_path)
+      System.put_env("TEST_APP_CONFIG_FILE", "absolute_test.json")
 
       # Write initial content to the file and make sure directory exists
       File.mkdir_p!(absolute_path)

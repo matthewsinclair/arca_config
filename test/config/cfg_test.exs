@@ -1,4 +1,6 @@
 defmodule Arca.Config.Cfg.Test do
+  # async: false -- mutates the config-location environment variables and, in two
+  # tests, the working directory itself.
   use ExUnit.Case, async: false
   alias Arca.Config.Cfg
 
@@ -8,16 +10,21 @@ defmodule Arca.Config.Cfg.Test do
   # env var and then delete it, wiping the value this block establishes. Before
   # ruling R4 that damage was invisible, because a load from the resulting
   # nonexistent location still reported success with an empty config. Re-asserting
-  # the location per test makes the module order-independent. The wider isolation
-  # sweep is AC-04.5 (WP-04).
+  # the location per test makes the module order-independent.
+  #
+  # It no longer writes a copy into the repository's own `.arca_config/` "to
+  # handle tests that rely on the default path": nothing relies on the default
+  # path now that test_helper.exs gives the whole run a disposable location.
   setup do
     # Set up test paths for doctest
     app_name = Arca.Config.Cfg.config_domain() |> to_string()
     test_path = System.tmp_dir!()
-    app_specific_path = ".#{app_name}"
     test_file = "config_test.json"
     app_specific_path_var = "#{String.upcase(app_name)}_CONFIG_PATH"
     app_specific_file_var = "#{String.upcase(app_name)}_CONFIG_FILE"
+
+    original_path = System.get_env(app_specific_path_var)
+    original_file = System.get_env(app_specific_file_var)
 
     System.put_env(app_specific_path_var, test_path)
     System.put_env(app_specific_file_var, test_file)
@@ -26,63 +33,164 @@ defmodule Arca.Config.Cfg.Test do
     config_file = Path.join(test_path, test_file)
     File.mkdir_p!(Path.dirname(config_file))
 
-    # Create app-specific config directory for file watcher tests
-    app_config_dir = Path.join(File.cwd!(), app_specific_path)
-    app_config_file = Path.join(app_config_dir, "config.json")
-    File.mkdir_p!(app_config_dir)
-
-    # This one is inside the repo tree and is tracked, so capture it and put it
-    # back exactly as found rather than removing it on the way out.
-    original_app_config = File.read(app_config_file)
-
     File.write!(
       config_file,
-      ~s({"id": "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON", "database": {"host": "localhost"}})
-    )
-
-    # Write to app_specific directory too to handle tests that rely on the default path
-    File.write!(
-      app_config_file,
       ~s({"id": "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON", "database": {"host": "localhost"}})
     )
 
     on_exit(fn ->
       # Clean up test files
       File.rm(config_file)
-      restore_file(app_config_file, original_app_config)
-      System.delete_env(app_specific_path_var)
-      System.delete_env(app_specific_file_var)
+      Arca.Config.Test.Support.restore_env(app_specific_path_var, original_path)
+      Arca.Config.Test.Support.restore_env(app_specific_file_var, original_file)
     end)
 
     :ok
   end
 
-  # Put a file back as it was found: rewrite what was there, or remove it if it
-  # did not exist. Pattern-matched so on_exit stays free of if/case.
-  defp restore_file(path, {:ok, content}), do: File.write!(path, content)
-  defp restore_file(path, {:error, _reason}), do: File.rm(path)
-
   doctest Arca.Config
   doctest Arca.Config.Cfg
 
+  # AT-04.1, AT-04.2, AT-04.3, AT-04.5 (ST0002 acceptance.md). Archetype AR-4:
+  # the config location was a function of six inputs resolved fresh on every
+  # access -- two env-var tiers, application config, a CWD-relative default, a
+  # flip on whether the file happened to exist, and a heuristic that guessed the
+  # domain by scanning started applications.
+  describe "location model (AR-4)" do
+    @location_vars [
+      "ARCA_CONFIG_CONFIG_PATH",
+      "ARCA_CONFIG_CONFIG_FILE",
+      "ARCA_CONFIG_PATH",
+      "ARCA_CONFIG_FILE"
+    ]
+
+    setup do
+      original_env = Map.new(@location_vars, fn var -> {var, System.get_env(var)} end)
+      original_domain = Application.get_env(:arca_config, :config_domain)
+      original_path = Application.get_env(:arca_config, :config_path)
+      original_file = Application.get_env(:arca_config, :config_file)
+
+      Enum.each(@location_vars, &System.delete_env/1)
+      Application.delete_env(:arca_config, :config_path)
+      Application.delete_env(:arca_config, :config_file)
+
+      on_exit(fn ->
+        Enum.each(original_env, fn {var, value} ->
+          Arca.Config.Test.Support.restore_env(var, value)
+        end)
+
+        Arca.Config.Test.Support.restore_app_env(:config_domain, original_domain)
+        Arca.Config.Test.Support.restore_app_env(:config_path, original_path)
+        Arca.Config.Test.Support.restore_app_env(:config_file, original_file)
+      end)
+
+      :ok
+    end
+
+    test "precedence chain end-to-end" do
+      # 4. Default, lowest priority.
+      assert Cfg.config_pathname() == Path.expand(".arca_config")
+      assert Cfg.config_filename() == "config.json"
+
+      # 3. Application configuration beats the default.
+      Application.put_env(:arca_config, :config_path, "/from/app/env")
+      Application.put_env(:arca_config, :config_file, "app_env.json")
+      assert Cfg.config_pathname() == "/from/app/env"
+      assert Cfg.config_filename() == "app_env.json"
+
+      # 2. Generic environment variables beat application configuration.
+      System.put_env("ARCA_CONFIG_PATH", "/from/generic")
+      System.put_env("ARCA_CONFIG_FILE", "generic.json")
+      assert Cfg.config_pathname() == "/from/generic"
+      assert Cfg.config_filename() == "generic.json"
+
+      # 1. App-specific environment variables win outright. The README said the
+      # opposite for both of these tiers, which is what left arca_cli's env
+      # isolation silently inert across nine files (AF-23).
+      System.put_env("ARCA_CONFIG_CONFIG_PATH", "/from/app/specific")
+      System.put_env("ARCA_CONFIG_CONFIG_FILE", "specific.json")
+      assert Cfg.config_pathname() == "/from/app/specific"
+      assert Cfg.config_filename() == "specific.json"
+
+      # The resolved file is exactly those two combined, with nothing else
+      # consulted.
+      assert Cfg.config_file() == "/from/app/specific/specific.json"
+    end
+
+    test "config_domain deterministic without heuristic" do
+      Application.delete_env(:arca_config, :config_domain)
+
+      assert Cfg.config_domain() == :arca_config
+      assert Cfg.env_var_prefix() == "ARCA_CONFIG"
+    end
+
+    test "location stable across file creation" do
+      configured_dir = Path.join(System.tmp_dir!(), "arca_stability_#{:rand.uniform(10_000)}")
+      File.mkdir_p!(configured_dir)
+      on_exit(fn -> File.rm_rf!(configured_dir) end)
+
+      System.put_env("ARCA_CONFIG_CONFIG_PATH", configured_dir)
+      System.put_env("ARCA_CONFIG_CONFIG_FILE", "stable.json")
+      expected = Path.join(configured_dir, "stable.json")
+
+      # The configured file does not exist yet. The answer must still be the
+      # configured location: resolving to somewhere else is how a put landed in
+      # the repo root under a name nobody configured (AF-25, probe P3).
+      refute File.exists?(expected)
+      assert Cfg.config_file() == expected
+
+      File.write!(expected, "{}")
+      assert Cfg.config_file() == expected
+    end
+
+    test "shell-exported config var beats the checked-in dev default" do
+      scratch = Path.join(System.tmp_dir!(), "arca_dotenv_#{:rand.uniform(10_000)}")
+      File.mkdir_p!(Path.join(scratch, "config"))
+
+      File.write!(
+        Path.join([scratch, "config", ".env"]),
+        "ARCA_CONFIG_CONFIG_PATH=from_the_dot_env_file\n"
+      )
+
+      dotenv_script = Path.join(File.cwd!(), "config/dotenv.exs")
+      original_cwd = File.cwd!()
+      System.put_env("ARCA_CONFIG_CONFIG_PATH", "from_the_shell")
+
+      on_exit(fn ->
+        File.cd!(original_cwd)
+        File.rm_rf!(scratch)
+      end)
+
+      # The real script, run against a .env of our own: it reads config/.env
+      # relative to the working directory.
+      File.cd!(scratch)
+      Code.eval_file(dotenv_script)
+      File.cd!(original_cwd)
+
+      assert System.get_env("ARCA_CONFIG_CONFIG_PATH") == "from_the_shell"
+    end
+  end
+
   describe "Arca.Config.Cfg" do
     setup do
-      # Get previous env var for config path and file names
-      previous_env = System.get_env()
-
       app_name = Arca.Config.Cfg.config_domain() |> to_string()
-      app_specific_path = ".#{app_name}"
       app_specific_path_var = "#{String.upcase(app_name)}_CONFIG_PATH"
       app_specific_file_var = "#{String.upcase(app_name)}_CONFIG_FILE"
 
-      # Set up to load the app-specific config file
-      System.put_env(app_specific_path_var, app_specific_path)
-      System.put_env(app_specific_file_var, "config.json")
+      # Restore exactly what was there, rather than the old
+      # `System.put_env(System.get_env())`: putting back a superset cannot
+      # delete a variable the test added, so isolation only appeared to work
+      # because the next file overwrote what this one left behind.
+      original_path = System.get_env(app_specific_path_var)
+      original_file = System.get_env(app_specific_file_var)
 
-      # Write a known config file to a known location
-      config_dir = Path.join(File.cwd!(), app_specific_path)
+      # A directory of this module's own, not `.#{app_name}` inside the repo.
+      config_dir = Path.join(System.tmp_dir!(), "arca_cfg_test_#{:rand.uniform(10_000)}")
       config_file = Path.join(config_dir, "config.json")
       File.mkdir_p!(config_dir)
+
+      System.put_env(app_specific_path_var, config_dir)
+      System.put_env(app_specific_file_var, "config.json")
 
       File.write!(
         config_file,
@@ -91,8 +199,9 @@ defmodule Arca.Config.Cfg.Test do
 
       # Put things back how we found them
       on_exit(fn ->
-        System.put_env(previous_env)
-        File.rm(config_file)
+        Arca.Config.Test.Support.restore_env(app_specific_path_var, original_path)
+        Arca.Config.Test.Support.restore_env(app_specific_file_var, original_file)
+        File.rm_rf!(config_dir)
       end)
     end
 
@@ -112,16 +221,28 @@ defmodule Arca.Config.Cfg.Test do
              )
     end
 
+    # Previously asserted string identity against a trailing slash, which is why
+    # env-derived paths were deliberately left unexpanded while every other tier
+    # was expanded (AF-28). It also left `/tmp/` and `bozo.json` in the
+    # environment for whatever ran next.
     test "config file path and name via env var" do
-      # Jam app-specific values into the env vars
       app_specific_path_var = "#{Cfg.env_var_prefix()}_CONFIG_PATH"
       app_specific_file_var = "#{Cfg.env_var_prefix()}_CONFIG_FILE"
+      original_path = System.get_env(app_specific_path_var)
+      original_file = System.get_env(app_specific_file_var)
+
+      on_exit(fn ->
+        Arca.Config.Test.Support.restore_env(app_specific_path_var, original_path)
+        Arca.Config.Test.Support.restore_env(app_specific_file_var, original_file)
+      end)
+
       System.put_env(app_specific_path_var, "/tmp/")
       System.put_env(app_specific_file_var, "bozo.json")
 
-      # Test that they are equal to what Cfg thinks they should be
-      assert System.get_env(app_specific_path_var) == Cfg.config_pathname()
-      assert System.get_env(app_specific_file_var) == Cfg.config_filename()
+      # Expanded, like every other tier: the trailing slash is not preserved.
+      assert Cfg.config_pathname() == "/tmp"
+      assert Cfg.config_filename() == "bozo.json"
+      assert Cfg.config_file() == "/tmp/bozo.json"
     end
 
     test "load valid configuration file (and succeed)" do

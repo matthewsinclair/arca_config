@@ -1,4 +1,6 @@
 defmodule Arca.Config.CallbackTest do
+  # async: false -- registers callbacks in the shared registries and asserts how
+  # many times each fires, which a concurrent module's writes would perturb.
   use ExUnit.Case, async: false
   doctest Arca.Config
 

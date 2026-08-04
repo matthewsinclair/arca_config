@@ -40,10 +40,12 @@ defmodule Arca.Config.InitHelper do
   end
 
   @doc """
-  Sets up a default configuration directory in the user's home directory.
+  Sets up a default configuration directory relative to the working directory.
 
-  This function creates a directory like `~/.app_name/` and ensures
-  a config.json file exists within it.
+  This function creates a directory like `.app_name/` in the current working
+  directory and ensures a config.json file exists within it. It also sets
+  `<APP_NAME>_CONFIG_PATH`, `<APP_NAME>_CONFIG_FILE` and the config domain, so
+  it changes global state for the whole VM, not just its return value.
 
   ## Parameters
     - `app_name`: The name of the application as an atom (e.g., `:my_app`)

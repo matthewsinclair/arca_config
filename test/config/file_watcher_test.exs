@@ -1,4 +1,6 @@
 defmodule Arca.Config.FileWatcherTest do
+  # async: false -- drives the single named watcher process directly and points
+  # the global config location at its own file.
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
@@ -59,10 +61,12 @@ defmodule Arca.Config.FileWatcherTest do
 
     on_exit(fn ->
       # Restore original environment variables (delete when originally unset).
+      # Restore, not delete: deleting these left every later resolution with one
+      # fewer tier to consult than the run started with.
       Arca.Config.Test.Support.restore_env("ARCA_CONFIG_PATH", original_env.config_path)
       Arca.Config.Test.Support.restore_env("ARCA_CONFIG_FILE", original_env.config_file)
-      System.delete_env(app_specific_path_var)
-      System.delete_env(app_specific_file_var)
+      Arca.Config.Test.Support.restore_env(app_specific_path_var, original_env.app_specific_path)
+      Arca.Config.Test.Support.restore_env(app_specific_file_var, original_env.app_specific_file)
 
       # Clean up test directory
       File.rm_rf!(test_dir)

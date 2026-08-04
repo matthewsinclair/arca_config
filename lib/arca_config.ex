@@ -70,18 +70,12 @@ defmodule Arca.Config do
 
   The configuration system supports both a railway-oriented programming style:
 
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> {:ok, _} = Arca.Config.put("test_key", "test_value")
       iex> Arca.Config.get("test_key")
       {:ok, "test_value"}
 
   And a Map-like interface via Arca.Config.Map:
 
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> {:ok, _} = Arca.Config.put("sample", "value")
       iex> config = Arca.Config.Map.new()
       iex> config["sample"]
@@ -242,9 +236,6 @@ defmodule Arca.Config do
     - `{:error, reason}` if the key doesn't exist or another error occurs
 
   ## Examples
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> {:ok, _} = Arca.Config.put("app.name", "MyApp")
       iex> Arca.Config.get("app.name")
       {:ok, "MyApp"}
@@ -265,9 +256,6 @@ defmodule Arca.Config do
     - `RuntimeError` if the key doesn't exist or another error occurs
 
   ## Examples
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> Arca.Config.put!("app.name", "MyApp")
       "MyApp"
       iex> Arca.Config.get!("app.name")
@@ -288,9 +276,6 @@ defmodule Arca.Config do
     - `{:error, reason}` if an error occurred
 
   ## Examples
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> {:ok, value} = Arca.Config.put("database.host", "localhost")
       iex> value
       "localhost"
@@ -312,9 +297,6 @@ defmodule Arca.Config do
     - `RuntimeError` if an error occurred
 
   ## Examples
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> Arca.Config.put!("database.host", "localhost")
       "localhost"
   """
@@ -340,9 +322,6 @@ defmodule Arca.Config do
     - `{:ok, :subscribed}` if the subscription was successful
 
   ## Examples
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> Registry.start_link(keys: :duplicate, name: Arca.Config.Registry)
       iex> Arca.Config.subscribe("test_key")
       {:ok, :subscribed}
@@ -360,9 +339,6 @@ defmodule Arca.Config do
     - `{:ok, :unsubscribed}` if the unsubscription was successful
 
   ## Examples
-      iex> System.put_env("ARCA_CONFIG_PATH", System.tmp_dir!())
-      iex> System.put_env("ARCA_CONFIG_FILE", "doctest_config.json")
-      iex> File.write!(Path.join(System.tmp_dir(), "doctest_config.json"), "{}")
       iex> Registry.start_link(keys: :duplicate, name: Arca.Config.Registry)
       iex> Arca.Config.unsubscribe("test_key")
       {:ok, :unsubscribed}
@@ -576,7 +552,9 @@ defmodule Arca.Config do
           :description,
           "A simple file-based configurator for Elixir apps"
         ),
-      version: Application.get_env(:arca_config, :version, "0.1.0"),
+      # From the built application, so there is one version string in the
+      # project rather than a copy in config.exs and a stale default here.
+      version: to_string(Application.spec(:arca_config, :vsn)),
       author: Application.get_env(:arca_config, :author, "Arca"),
       about: Application.get_env(:arca_config, :about, "Arca Config CLI"),
       allow_unknown_args: true,

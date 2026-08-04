@@ -10,7 +10,7 @@ by adding `arca_config` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:arca_config, "~> 0.1.0"}
+    {:arca_config, "~> 0.2.0"}
   ]
 end
 ```
@@ -21,13 +21,7 @@ end
 
 ### 1. Add dependency to mix.exs
 
-```elixir
-def deps do
-  [
-    {:arca_config, "~> 0.2.0"}
-  ]
-end
-```
+See [Installation](#installation) above.
 
 ### 2. Configure start phases in mix.exs
 
@@ -105,64 +99,36 @@ Arca Config can also be used as a command-line tool:
 
 ## Configuration
 
-Arca Config automatically derives its configuration from the config domain. For example, if your application is named `:my_app`:
+Arca Config derives its configuration location from the config domain. Set the domain explicitly in your application's `start/2`; it is not guessed:
 
-1. It will first check for a configuration file at `~/.my_app/config.json` in the user's home directory.
-2. If no file is found there, it will then look for `./.my_app/config.json` in the current working directory.
+```elixir
+Application.put_env(:arca_config, :config_domain, :my_app)
+```
 
-This allows for both global user settings and project-specific settings, with the global settings taking precedence.
+With a domain of `:my_app`, the configuration file is `./.my_app/config.json` — relative to the working directory, not the home directory — unless you point it somewhere else.
+
+**One location is resolved, and it does not depend on which files exist.** Asking for the config file returns the configured location whether or not anything is there yet, so a write creates the file you asked for rather than being redirected the moment the configured one is missing.
 
 ### Custom Configuration Locations
 
-You can customize the configuration file location in the following ways (in order of precedence):
+A directory and a filename are resolved independently, each from the first tier that answers:
 
-1. Using generic environment variables (highest priority):
-   - `ARCA_CONFIG_PATH`: Path to the directory containing the config file
-   - `ARCA_CONFIG_FILE`: Name of the config file
+| Priority   | Directory                                          | Filename                                |
+| ---------- | -------------------------------------------------- | --------------------------------------- |
+| 1 highest  | `MY_APP_CONFIG_PATH` (from your domain)            | `MY_APP_CONFIG_FILE`                    |
+| 2          | `ARCA_CONFIG_PATH`                                 | `ARCA_CONFIG_FILE`                      |
+| 3          | `config :arca_config, config_path: "/custom/path"` | `config :arca_config, config_file: ...` |
+| 4 lowest   | `.my_app/` in the working directory                | `config.json`                           |
 
-2. Using application-specific environment variables:
-   - `MY_APP_CONFIG_PATH`: Path derived from your app name
-   - `MY_APP_CONFIG_FILE`: Filename derived from your app name
+**The domain-specific variables win over the generic ones.** Earlier versions of this README claimed the opposite. If you are isolating configuration in a test suite, set the domain-specific pair: setting `ARCA_CONFIG_PATH` while your application defines a domain has no effect, and fails silently.
 
-3. Using application configuration:
-
-   ```elixir
-   config :arca_config,
-     config_domain: :your_app_name,  # Override config domain detection
-     config_path: "/custom/path/",
-     config_file: "custom_config.json"
-   ```
-
-4. Default values based on config domain (lowest priority):
-   - Default path: `~/.{app_name}/`
-   - Default file: `config.json`
-
-This auto-configuration feature means you don't need duplicate configuration across different applications, while maintaining backward compatibility with existing applications.
+The result is always an absolute path, so a trailing slash in an environment variable is not preserved.
 
 ### Environment Variables (.env file)
 
-Arca.Config automatically loads environment variables from `config/.env` file in development and test environments. This makes it easy to set configuration without manually sourcing files.
+**This is not a library feature.** `config/dotenv.exs` belongs to this repository's own dev and test setup: it is imported by *this project's* `config/config.exs` and is never evaluated in a project that depends on `arca_config`. Adding a `config/.env` to your own project does nothing unless you wire up the equivalent yourself.
 
-Create a `config/.env` file in your project:
-
-```bash
-# config/.env
-ARCA_CONFIG_CONFIG_PATH=.arca_config
-ARCA_CONFIG_CONFIG_FILE=config.json
-
-# Your custom environment variables
-DATABASE_URL=postgres://localhost/myapp_dev
-API_KEY=development_key_123
-```
-
-The .env file is automatically loaded when you run:
-
-- `mix test`
-- `iex -S mix`
-- `mix run`
-- Any other Mix command in dev/test environments
-
-**Note**: The .env file should not be committed to version control. Add it to your `.gitignore` file.
+For the record, since the file used to be advertised here as something it is not: it reads `config/.env` during config evaluation and treats each line as a **default**. A variable already exported by your shell, or set by CI, wins. It previously overwrote them unconditionally, which meant a variable you exported before `mix test` was replaced before a single test ran, and a fresh clone with no `.env` resolved a different config location than a working tree with one.
 
 ## Development
 

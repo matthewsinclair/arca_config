@@ -1,4 +1,7 @@
 defmodule Arca.Config.AutoConfigTest do
+  # async: false -- sets the config domain and the domain's location environment
+  # variables, both of which are process-global and steer every other module's
+  # resolution.
   use ExUnit.Case, async: false
 
   setup do
@@ -16,10 +19,15 @@ defmodule Arca.Config.AutoConfigTest do
     System.put_env("#{env_prefix}_CONFIG_OVERRIDE_SERVER_PORT", "5432")
     System.put_env("#{env_prefix}_CONFIG_OVERRIDE_DEBUG_ENABLED", "true")
 
-    # Set the config domain
+    # Set the config domain, and put back whatever it was. Leaving it as
+    # `:test_app` was how `.test_app/` kept appearing in the repository: every
+    # later location resolution that had no environment variable to go on fell
+    # back to `.test_app/` in the working directory.
+    original_domain = Application.get_env(:arca_config, :config_domain)
     Application.put_env(:arca_config, :config_domain, :test_app)
 
     on_exit(fn ->
+      Arca.Config.Test.Support.restore_app_env(:config_domain, original_domain)
       # Clean up environment variables
       System.delete_env("#{env_prefix}_CONFIG_PATH")
       System.delete_env("#{env_prefix}_CONFIG_FILE")
@@ -27,18 +35,10 @@ defmodule Arca.Config.AutoConfigTest do
       System.delete_env("#{env_prefix}_CONFIG_OVERRIDE_SERVER_PORT")
       System.delete_env("#{env_prefix}_CONFIG_OVERRIDE_DEBUG_ENABLED")
 
-      # Clean up test-specific config dirs (.test_app) anywhere they might be created
-      [
-        # Home directory
-        Path.join(System.user_home!(), ".test_app"),
-        # Current working directory
-        Path.join(File.cwd!(), ".test_app"),
-        # Parent directory
-        Path.join(Path.dirname(File.cwd!()), ".test_app")
-      ]
-      |> Enum.each(&File.rm_rf!/1)
-
-      # Cleanup the test directory
+      # Cleanup the test directory. Nothing else needs removing: this module no
+      # longer writes outside its own temporary directory, so the old sweep of
+      # `.test_app` from HOME, the working directory and the repo's parent is
+      # gone with the escape that made it necessary.
       File.rm_rf!(test_dir)
     end)
 
@@ -127,19 +127,33 @@ defmodule Arca.Config.AutoConfigTest do
     assert config["database"]["password"] == "secret"
   end
 
-  test "explicitly tests directory setup and cleanup", %{config_file: _config_file} do
-    # This test explicitly creates the .test_app directory to ensure cleanup works
+  # `setup_default_config/2` creates `.<app>/` relative to the working
+  # directory, so this ran inside the repository and left `.test_app/` in the
+  # working tree -- which is why test_helper.exs used to delete that directory
+  # from three locations on the way in and out. Exercising the same behaviour in
+  # a working directory of our own tests the real thing without escaping.
+  test "sets up a default config directory relative to the working directory" do
+    scratch = Path.join(System.tmp_dir!(), "arca_init_helper_#{:rand.uniform(10_000)}")
+    File.mkdir_p!(scratch)
+    original_cwd = File.cwd!()
+
+    on_exit(fn ->
+      File.cd!(original_cwd)
+      File.rm_rf!(scratch)
+    end)
+
+    File.cd!(scratch)
+    # Resolved rather than as-constructed: on macOS the temporary directory
+    # reaches through a symlink, and the library reports the real path.
+    resolved_scratch = File.cwd!()
+
     {:ok, config_path} =
       Arca.Config.InitHelper.setup_default_config(:test_app, %{"test" => "value"})
 
-    # Verify the directory was created - should now be in the project dir, not home
-    project_dir = Path.join(File.cwd!(), ".test_app")
-    assert File.exists?(project_dir)
+    File.cd!(original_cwd)
+
+    assert config_path == Path.join([resolved_scratch, ".test_app", "config.json"])
     assert File.exists?(config_path)
-
-    # Suppress output during test
-
-    # Directory should be cleaned up automatically in on_exit callback
   end
 
   test "environment overrides are applied through start function", %{config_file: config_file} do
