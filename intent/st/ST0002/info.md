@@ -1,5 +1,5 @@
 ---
-verblock: "04 Aug 2026:v0.1: matts - Initial version"
+verblock: "04 Aug 2026:v1.0: matts - remediation complete, 0.3.0 published; open ACs are vc's and hv's"
 intent_version: 2.18.0
 status: WIP
 slug: fable-review-of-arca-config-base-code
@@ -19,7 +19,9 @@ The anchor contract, settled from the findings: **every public return value is a
 
 arca_config is a ~2,800-line JSON file-backed config library (facade + GenServer + ETS cache + polling FileWatcher + legacy Cfg loader) with one live consumer: arca_cli, a git dep on `branch: main`. arca_cli's ST0011 (Fable audit -> breaking 0.5.0, 40/40 ACs) generated the handover that seeded this thread; its session stays live as the verification node (vc) and will run the real acceptance test -- rebuild arca_cli against the new arca_config and re-run its 710 tests.
 
-The analysis phase is complete: 39 findings, 5 archetypes, execution probes confirming the critical claims (silent write success, stale ancestor cache, incoherent notification matrix, nondeterministic domain detection, env-override key collapse). See `design.md` for the ledger and `acceptance.md` for the contract. Constraints that shape remediation:
+**Status, 2026-08-04**: remediation is complete and 0.3.0 is published at `03969fa` (CI green, 222 tests, coverage 90.47%). WP-01 through WP-05 are DONE. The contract stands at **34/38 -- BLOCKED**, and the four open ACs are the ones this thread was always going to end on: vc's ack of the removal log (AC-00.1), vc's rebuild of arca_cli (AC-00.2), vc's report (AC-06.1), and hv's tag (AC-06.3). See `release-verification.md` for the handover.
+
+The analysis phase found 39 findings, 5 archetypes, execution probes confirming the critical claims (silent write success, stale ancestor cache, incoherent notification matrix, nondeterministic domain detection, env-override key collapse). One more finding (AF-40) came from a vc lead, and a later critic pass added 21 of its own -- four of them criticals the audit missed, including data loss on the write path. See `design.md` for the ledger and `acceptance.md` for the contract. Constraints that shaped remediation:
 
 - **Deletion tripwire**: arca_cli probes `function_exported?(Arca.Config, :register_change_callback, 2)` as a liveness proxy (`arca_cli lib/arca_cli.ex:118-130`). Zero callers is not sufficient grounds to retire a public symbol; the sibling-repo probe (arca_id, arca_dbutils, arca_notionex, arca_doc, arca_optimus: zero references) is on record in design.md.
 - arca_cli text-matches our error prose (`lib/arca_cli.ex:1083-1098`); the error-dialect unification must be coordinated with vc.
@@ -33,10 +35,6 @@ The analysis phase is complete: 39 findings, 5 archetypes, execution probes conf
 ## Acceptance
 
 Acceptance Criteria and Acceptance Tests for this steel thread live in `acceptance.md` (the single source of truth). Do not restate ACs here -- see that file for the ratified completeness boundary and live status.
-
-## Related Steel Threads
-
-- [List any related steel threads here]
 
 ## Context for LLM
 
