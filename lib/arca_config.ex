@@ -140,6 +140,7 @@ defmodule Arca.Config do
 
   use Application
 
+  alias Arca.Config.Cfg
   alias Arca.Config.Server
   alias Arca.Config.Supervisor, as: ConfigSupervisor
 
@@ -302,6 +303,75 @@ defmodule Arca.Config do
   """
   @spec put!(String.t() | atom() | list(), any()) :: any() | no_return()
   def put!(key, value), do: Server.put!(key, value)
+
+  @doc """
+  Removes a configuration value.
+
+  ## Parameters
+    - `key`: A string with dot notation, atom, or list of keys
+
+  ## Returns
+    - `{:ok, key}` if the key was removed
+    - `{:error, reason}` if the key did not exist or persistence failed
+
+  ## Examples
+      iex> {:ok, _} = Arca.Config.put("app.transient", "gone soon")
+      iex> {:ok, _} = Arca.Config.delete("app.transient")
+      iex> {:error, _} = Arca.Config.get("app.transient")
+  """
+  @spec delete(String.t() | atom() | list()) :: {:ok, any()} | {:error, term()}
+  def delete(key), do: Server.delete(key)
+
+  @doc """
+  Removes a configuration value or raises if the operation fails.
+
+  ## Parameters
+    - `key`: A string with dot notation, atom, or list of keys
+
+  ## Returns
+    - The key if it was removed
+
+  ## Raises
+    - `RuntimeError` if the key did not exist or persistence failed
+
+  ## Examples
+      iex> Arca.Config.put!("app.transient", "gone soon")
+      "gone soon"
+      iex> {:ok, _} = Arca.Config.delete("app.transient")
+  """
+  @spec delete!(String.t() | atom() | list()) :: any() | no_return()
+  def delete!(key), do: Server.delete!(key)
+
+  @doc """
+  Reports which configuration file is in use and which tier resolved it.
+
+  The counterpart to `switch_config_location/1`: that one moves the location,
+  this one tells you where it currently is and why. Path and filename resolve
+  independently through the same four tiers, so each carries its own source --
+  `:env_domain`, `:env_generic`, `:app_config`, or `:default`.
+
+  Reads the environment directly rather than going through the server, so it
+  still answers when the server is down -- which is exactly when the question
+  gets asked.
+
+  ## Returns
+    - `{:ok, location}` with `:path`, `:file`, `:config_file`, and a `:source`
+      map keyed by `:path` and `:file`
+
+  ## Examples
+      iex> {:ok, location} = Arca.Config.get_config_location()
+      iex> is_binary(location.config_file)
+      true
+  """
+  @spec get_config_location() ::
+          {:ok,
+           %{
+             path: String.t(),
+             file: String.t(),
+             config_file: String.t(),
+             source: %{path: atom(), file: atom()}
+           }}
+  def get_config_location, do: Cfg.config_location()
 
   @doc """
   Subscribes to changes to a specific configuration key.

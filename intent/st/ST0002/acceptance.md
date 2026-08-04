@@ -44,7 +44,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 - AC-02.1 Exactly one nested get/put/delete/write implementation remains; every public write path registers the watcher write-token exactly once (no self-notification fork)
 - AC-02.2 (ruling R1) A missing key yields one canonical machine-matchable error shape from every entry point (facade, Server, Cfg-or-successor, Map); the four current dialects are gone
-- AC-02.3 The facade exposes `delete/1`, `delete!/1`, and a location-inspection API (`get_config_location/0` returning path, file, and source) such that arca_cli's `cli_command_helper.ex:350` call works unmodified
+- AC-02.3 The facade exposes `delete/1`, `delete!/1`, and a location-inspection API (`get_config_location/0` returning path, file, and source) such that arca_cli's `cli_command_helper.ex:350` call works unmodified -- satisfied: yes (2026-08-04; pinned by AT-00.1)
 - AC-02.4 (ruling R7) `Access.pop/2` and `get_and_update/3`'s `:pop` actually delete through the one write path, or the Access implementation is removed
 - AC-02.5 The dead `{:ok, conf}` clause in `notify_external_change/0` is gone, `:get_config` has a single reply shape, and no test mocks GenServer to reach dead code
 
@@ -87,7 +87,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### ST-level
 
-- AT-00.1 test/config/consumer_contract_test.exs::"downstream-relied-upon surface is pinned" -- covers AC-00.4 -- status: to-write (red-first; AC-00.4 ratified by hv 2026-08-04, so this is now live work)
+- AT-00.1 test/config/consumer_contract_test.exs -- covers AC-00.4 -- status: green (eight tests, each citing the arca_cli file:line that makes the call; red-first on the facade gap, closed by AC-02.3 in the same commit)
 - Coverage: AC-00.1/.2/.3 are non-test with evidence on the AC line; AC-00.4 covered by AT-00.1
 
 ### WP-01

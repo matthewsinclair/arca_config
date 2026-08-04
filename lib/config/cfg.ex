@@ -159,11 +159,8 @@ defmodule Arca.Config.Cfg do
   """
   @spec config_pathname() :: String.t()
   def config_pathname do
-    (System.get_env("#{env_var_prefix()}_CONFIG_PATH") ||
-       System.get_env("ARCA_CONFIG_PATH") ||
-       Application.get_env(:arca_config, :config_path) ||
-       default_config_path())
-    |> Path.expand()
+    {_source, path} = resolved_pathname()
+    Path.expand(path)
   end
 
   @doc """
@@ -236,22 +233,95 @@ defmodule Arca.Config.Cfg do
   """
   @spec config_filename() :: String.t()
   def config_filename do
-    app_specific_env_var = "#{env_var_prefix()}_CONFIG_FILE"
-    default_arca_env_var = "ARCA_CONFIG_FILE"
+    {_source, filename} = resolved_filename()
 
-    filename =
-      System.get_env(app_specific_env_var) ||
-        System.get_env(default_arca_env_var) ||
-        Application.get_env(:arca_config, :config_file) ||
-        default_config_file()
+    # A configured value carrying a directory keeps only its last segment, so
+    # `.my_app/` joined with `/Users/x/.my_app/config.json` cannot produce a
+    # doubled path. `Path.basename/1` is a no-op on a bare filename, so the
+    # branch this replaces was never doing anything the call does not do.
+    Path.basename(filename)
+  end
 
-    # If filename contains a path, extract just the filename part
-    # This prevents issues like joining .multiplyer/ with /Users/matts/.multiplyer/config.json
-    if String.contains?(filename, "/") do
-      Path.basename(filename)
-    else
-      filename
-    end
+  @doc """
+  Report the resolved configuration location and which tier answered for it.
+
+  Answers the question every consumer debugging a config problem actually asks:
+  not "what are the rules" but "which file are you reading, and why that one".
+  arca_cli's isolation set `ARCA_CONFIG_PATH` across nine files and silently had
+  no effect for months, because the domain-specific variable outranks it; this
+  function reports `:env_domain` in that situation and ends the guessing.
+
+  Path and filename resolve independently through the same four tiers, so each
+  reports its own source: `:env_domain`, `:env_generic`, `:app_config`, or
+  `:default`. Both are read live, so the answer reflects the environment now.
+
+  The result is a map rather than the keyword list `switch_config_location/1`
+  trades in, and deliberately so -- these are resolved facts, not options. That
+  function returns the *previous environment variables*, whose values may be nil
+  precisely because nothing was set; feeding a resolved location back into it
+  would pin a location that was previously free to move.
+
+  ## Returns
+    - `{:ok, location}` where location has `:path`, `:file`, `:config_file` and
+      a `:source` map keyed by `:path` and `:file`
+
+  ## Examples
+      iex> {:ok, location} = Arca.Config.Cfg.config_location()
+      iex> location.config_file == Arca.Config.Cfg.config_file()
+      true
+      iex> location.source.path in [:env_domain, :env_generic, :app_config, :default]
+      true
+  """
+  @spec config_location() ::
+          {:ok,
+           %{
+             path: String.t(),
+             file: String.t(),
+             config_file: String.t(),
+             source: %{path: atom(), file: atom()}
+           }}
+  def config_location do
+    {path_source, _path} = resolved_pathname()
+    {file_source, _file} = resolved_filename()
+
+    {:ok,
+     %{
+       path: config_pathname(),
+       file: config_filename(),
+       config_file: config_file(),
+       source: %{path: path_source, file: file_source}
+     }}
+  end
+
+  # The one ordered tier list for the config directory. `config_pathname/0`
+  # projects the value out of it and `config_location/0` projects the source, so
+  # a reported source cannot drift from the resolution that actually happened --
+  # which it would the moment the source was derived from a second copy of this
+  # chain.
+  @spec resolved_pathname() :: {atom(), String.t()}
+  defp resolved_pathname do
+    first_present([
+      {:env_domain, System.get_env("#{env_var_prefix()}_CONFIG_PATH")},
+      {:env_generic, System.get_env("ARCA_CONFIG_PATH")},
+      {:app_config, Application.get_env(:arca_config, :config_path)},
+      {:default, default_config_path()}
+    ])
+  end
+
+  @spec resolved_filename() :: {atom(), String.t()}
+  defp resolved_filename do
+    first_present([
+      {:env_domain, System.get_env("#{env_var_prefix()}_CONFIG_FILE")},
+      {:env_generic, System.get_env("ARCA_CONFIG_FILE")},
+      {:app_config, Application.get_env(:arca_config, :config_file)},
+      {:default, default_config_file()}
+    ])
+  end
+
+  # The last tier always yields a value, so this always finds one.
+  @spec first_present([{atom(), String.t() | nil}]) :: {atom(), String.t()}
+  defp first_present(tiers) do
+    Enum.find(tiers, fn {_source, value} -> not is_nil(value) end)
   end
 
   @doc """

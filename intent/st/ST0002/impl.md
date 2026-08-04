@@ -64,6 +64,25 @@ Five ATs red first. After: **152 passed (41 doctests, 111 tests)** across seven 
 
 Breaking changes for WP-06's migration notes: a consumer that never set `:config_domain` and relied on auto-detection now gets `:arca_config` -- the moduledoc already said setting it explicitly was mandatory, and the heuristic's answer was never stable enough to depend on; `config_file/0` no longer falls back to the local path when the configured file is absent; `config_pathname/0` returns an expanded absolute path.
 
+### AC-00.4 consumer contract + AC-02.3 facade completion -- landed 2026-08-04
+
+The first thing built after hv ratified AC-00.4, and the instrument the rest of the thread leans on. Suite **167 passed (48 doctests, 119 tests)** across five seeds; no drift.
+
+`test/config/consumer_contract_test.exs` (AT-00.1) pins every call arca_cli makes into this library, each assertion carrying the arca_cli `file:line` that makes it. It is deliberately mostly-green: a tripwire, not a feature test. WP-02 rewrites the error dialect and WP-05 removes surface, and this module is what turns "we broke our consumer" from a WP-06 discovery into a local failure at the moment of the change.
+
+- The **liveness tripwire is now a test**. `register_change_callback/2` has zero callers in arca_config *and* zero callers in arca_cli -- `arca_cli.ex:129` only asks whether it exists, and if the answer goes false every `save_settings` silently stops persisting. A call-graph search cannot find that consumer. Deleting the symbol now fails our suite.
+- **`get_config_location/0` was the one red.** It has never existed in any commit, yet arca_cli's testing helper documents it as the way to inspect a temp config (`cli_command_helper.ex:350`). That is documentation, not a live call site -- **the handover note's claim that arca_cli hard-matches it at runtime was wrong**, and nothing raises today. The obligation is real regardless: arca_cli tells its users the function is there.
+- **The error dialect is now pinned as arca_cli reads it.** `arca_cli.ex:1080-1092` classifies a missing setting with three clauses -- bare `:not_found`, a binary containing "not found", and a generic fallback. We return `{:error, "Key not found"}`, so arca_cli takes clause two. The proposed R1 shape matches none of the accepting clauses, so it degrades (does not crash) to `cannot read setting X: {:config, :not_found, [...]}`. R1 is therefore a visible, deliberate break with a test that must be changed and ledgered when WP-02 lands it.
+- **`switch_config_location/1`'s contract is the round-trip**, not the shape: `cli_command_helper.ex:500` passes a keyword list and matches `{:ok, previous}`, and `:509` feeds that same value straight back to restore.
+
+AC-02.3 closed the red: the facade gained `delete/1`, `delete!/1` (both already on `Server`, absent from the facade) and `get_config_location/0`.
+
+`get_config_location/0` returns a **map**, not the keyword list `switch_config_location/1` trades in, and the difference is deliberate. That function returns the *previous environment variables*, whose values may be nil precisely because nothing was set; a resolved location fed back into it would pin a location that was previously free to move. Different concepts get different shapes so the mistake is not available.
+
+It reports `:path`, `:file`, `:config_file`, and a `:source` map keyed by `:path` and `:file` -- each of the two resolves independently through the same four tiers, so a single source atom would have been a lie whenever they differed. `source` is the answer to the question that cost arca_cli months: its isolation set `ARCA_CONFIG_PATH` across nine files and never took effect, because the domain-specific variable outranks it. That situation now reports `:env_domain` and ends the guessing.
+
+**Highlander applies to the source, not just the value.** Deriving `:source` from a second copy of the `||` chain would drift from the resolution that actually happened the first time either changed. Instead `resolved_pathname/0` and `resolved_filename/0` hold the one ordered tier list and return `{source, value}`; `config_pathname/0` projects the value, `config_location/0` projects the source. `config_filename/0`'s `if String.contains?(filename, "/")` branch went with it -- `Path.basename/1` is a no-op on a bare filename, so the branch never did anything the call does not already do.
+
 ## Changed-tests ledger
 
 Every test changed because it asserted a defect gets a row here (AC-00.3). Flag each to vc.
