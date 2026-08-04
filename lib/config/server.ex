@@ -449,12 +449,6 @@ defmodule Arca.Config.Server do
   end
 
   @impl true
-  def handle_call({:reset_for_test, new_config}, _from, _state) do
-    # Reset server state for testing
-    {:reply, :ok, %{config: new_config, loaded: false}}
-  end
-
-  @impl true
   def handle_call({:get, key_path}, _from, state) do
     state
     |> ensure_loaded()

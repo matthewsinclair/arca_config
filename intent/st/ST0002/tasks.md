@@ -21,7 +21,7 @@
 - [x] WP-03 Notification and watcher coherence (AR-3) -- landed 2026-08-04, gate PASS 6/6; suite 147 green, 8 seeds
 - [x] hv: ratify the notification matrix in design.md (2026-08-04) -- ratified as implemented, both rules included; AC-03.1 satisfied in full
 - [x] WP-04 Location model (AR-4) -- landed 2026-08-04, gate PASS 7/7; suite 152 green, 7 seeds, isolation guard armed
-- [ ] WP-05 Surface and dependency pruning (AR-5)
+- [ ] WP-05 Surface and dependency pruning (AR-5) -- WIP. AC-05.1/.2/.3/.4/.5 satisfied 2026-08-04 (suite 188 green, 5 seeds); **AC-05.6 needs the critic-elixir pass**, which needs hv to authorise a subagent
 - [ ] WP-06 Downstream verification and release (vc + hv)
 
 ## Task Notes

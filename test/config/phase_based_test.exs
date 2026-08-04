@@ -27,8 +27,12 @@ defmodule Arca.Config.PhaseBasedTest do
     original_domain = Application.get_env(:arca_config, :config_domain)
     Application.delete_env(:arca_config, :config_domain)
 
-    # Reset FileWatcher to dormant state
-    send(Arca.Config.FileWatcher, {:reset_to_dormant, self()})
+    # Return the watcher to its dormant state through its own public API. This
+    # used to send `{:reset_to_dormant, self()}` -- a test-only message handled
+    # by the production module, which duplicated `stop_watching/0` except that
+    # it left the pending timer running and answered asynchronously, so the test
+    # continued before the watcher had actually stopped.
+    Arca.Config.FileWatcher.stop_watching()
 
     on_exit(fn ->
       # Restore original environment variables (delete when originally unset).
@@ -37,8 +41,7 @@ defmodule Arca.Config.PhaseBasedTest do
       end
 
       Arca.Config.Test.Support.restore_app_env(:config_domain, original_domain)
-      # Reset FileWatcher to dormant state after test
-      send(Arca.Config.FileWatcher, {:reset_to_dormant, self()})
+      Arca.Config.FileWatcher.stop_watching()
     end)
   end
 

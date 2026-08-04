@@ -170,8 +170,11 @@ defmodule Arca.Config.Map do
 
   defp pop_present(current_value, config, key) do
     case Server.delete(key) do
-      {:ok, _} -> {current_value, config}
-      {:error, reason} -> raise RuntimeError, message: "Failed to delete config: #{inspect(reason)}"
+      {:ok, _} ->
+        {current_value, config}
+
+      {:error, reason} ->
+        raise RuntimeError, message: "Failed to delete config: #{inspect(reason)}"
     end
   end
 end

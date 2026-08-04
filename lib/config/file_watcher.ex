@@ -160,13 +160,6 @@ defmodule Arca.Config.FileWatcher do
      %{config_file: nil, last_info: nil, write_token: nil, watching: false, check_timer: nil}}
   end
 
-  @impl true
-  def handle_info({:reset_to_dormant, _pid}, _state) do
-    # Reset to dormant state for testing
-    {:noreply,
-     %{config_file: nil, last_info: nil, write_token: nil, watching: false, check_timer: nil}}
-  end
-
   # Dormant: do not reschedule. A check already in the mailbox when watching
   # stopped used to re-arm the timer and quietly resurrect a stopped watcher;
   # start_watching/1 is the only thing that starts the cycle.

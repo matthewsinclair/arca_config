@@ -9,7 +9,6 @@ defmodule ArcaConfig.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: [main_module: Arca.Config, path: "_build/escript/arca_config", name: "arca_config"],
       mix_tasks: [
         arca_cli: Mix.Tasks.Arca.Config,
         comment: "🛠️ Arca Config"
@@ -30,7 +29,6 @@ defmodule ArcaConfig.MixProject do
   defp deps do
     [
       {:ok, "~> 2.3"},
-      # {:optimus, "~> 0.5.0"},
       {:optimus, github: "matthewsinclair/arca-optimus", branch: "main", override: true},
       {:castore, "~> 1.0"},
       {:jason, "~> 1.4"},

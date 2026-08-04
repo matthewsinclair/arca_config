@@ -1,5 +1,5 @@
 ---
-verblock: "04 Aug 2026:v0.3: matts - ST0002 contract RATIFIED by hv; rulings R1/R2/R4/R5/R6/R7 decided, R3 open"
+verblock: "04 Aug 2026:v0.4: matts - ST0002 contract RATIFIED; all seven rulings decided; WP-01/03/04 done, WP-02/05 partial"
 st_id: ST0002
 title: "Fable review of arca_config base code -- acceptance contract"
 ---
@@ -67,13 +67,13 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AC-04.6 (non-test) Each remaining `async: false` carries a reason comment, or the module is `async: true` -- evidence: grep over test/ -- every one of the 11 modules carries a specific reason naming the global state it touches (config domain, location env vars, the named server/watcher/cache processes, the working directory), and none is boilerplate. All 11 stay `async: false`: the location model is still process-global, which is AR-4's own finding rather than something WP-04 could remove -- satisfied: yes
 - AC-04.7 `config/.env` no longer overrides shell-exported config vars during config evaluation: an env var exported by the developer or CI wins over the checked-in dev default, and the resolution path is identical on a fresh clone (which has no `config/.env`)
 
-### WP-05 -- Surface and dependency pruning (status: TODO)
+### WP-05 -- Surface and dependency pruning (status: WIP -- AC-05.1/.2/.3/.4/.5 satisfied 2026-08-04; AC-05.6 awaits the critic-elixir pass)
 
 - AC-05.1 Every dependency removal carries positive downstream evidence and is proven by the WP-06 arca_cli rebuild; **the default is KEEP**. In-repo non-reference is not grounds for removal (hv ruling on the dependency retraction: unreferenced-here over public surface means untested contract surface, not dead surface). A dep with no downstream evidence either way stays, and gets a note in impl.md rather than a deletion
 - AC-05.2 Test backdoors (`{:reset_for_test, ...}`, `{:reset_to_dormant, ...}`) are out of production modules, with equivalent test control via supervised lifecycle
 - AC-05.3 (ruling R3) The CLI ruling is executed: either a single dispatch path through the Optimus spec in an extracted module, or the escript is removed; no unreachable command spec remains
-- AC-05.4 (non-test) One CI workflow, matrix per ruling R6 -- evidence: .github/workflows/ diff + green run -- satisfied: no
-- AC-05.5 (non-test) Cruft removed from version control: `AGENTS.md.bak`, `.backup/`, committed `.arca_config/` artifacts, debug scripts (or an explicit keep-ruling recorded) -- evidence: git rm list in impl.md -- satisfied: no
+- AC-05.4 (non-test) One CI workflow, matrix per ruling R6 -- evidence: `test.yml` deleted, `ci.yml` rewritten as one matrix (1.18.0/OTP 27, 1.18.4/OTP 28, 1.20.2/OTP 29 per R6), and both workflows' `ARCA_CONFIG_CONFIG_PATH: .arca_config` removed -- it pointed inside the checkout, which is how CI runs wrote into the repository -- satisfied: yes (2026-08-04; green run pending the next push, which is hv's to observe)
+- AC-05.5 (non-test) Cruft removed from version control -- evidence: `git rm` of four `.arca_config/` artifacts (including a 2024 OAuth config and a probe's `write_test.json`), three March-2025 debug scripts, and `.github/workflows/test.yml`; the commented-out `optimus` hex line; `.arca_config/` added to `.gitignore`. `AGENTS.md.bak` and `.backup/` were already untracked and ignored, so there was nothing to remove from version control -- recorded so the AC is not read as unfinished -- satisfied: yes (2026-08-04)
 - AC-05.6 The facade module contains delegation and documentation only; CLI/conversion/watch-loop logic lives elsewhere; critic-elixir pass on changed files is clean at severity >= warning
 
 ### WP-06 -- Downstream verification and release (status: TODO)
@@ -128,10 +128,10 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### WP-05
 
-- AT-05.1 test/config/facade_test.exs::"no test backdoor messages handled by prod modules" -- covers AC-05.2 -- status: to-write (red-first)
-- AT-05.2 test/arca_config_cli_test.exs::"single dispatch path per R3 ruling" -- covers AC-05.3 -- status: to-write (red-first)
-- AT-05.3 (gate) mix deps audit script asserting declared == referenced -- covers AC-05.1 -- status: to-write (red-first)
-- AT-05.4 (gate) critic-elixir clean at >= warning on changed files -- covers AC-05.6 -- status: to-write (red-first)
+- AT-05.1 test/config/production_surface_test.exs::"the library ships no production modules that answer test-only messages" (+ the scan-coverage and public-API siblings) -- covers AC-05.2 -- status: green. Structural on purpose and stated as such: with the clause gone the old message matches no `handle_info/2` and kills the process, so a behavioural test here would have to assert a crash
+- AT-05.2 test/config/cli_test.exs -- covers AC-05.3 -- status: green (eight tests, every one through `main/1`, so a specification that stopped matching fails them; includes the multi-word `set`, the coercion, and the list-as-chardata fix)
+- AT-05.3 test/deps_audit_test.exs -- covers AC-05.1 -- status: green, **restated**. As drafted it asserted declared == referenced, which would fail the build for any dependency with no in-repo call site -- the inference hv overruled, encoded as CI, and in direct contradiction of AC-05.1 as rewritten. It now names all thirteen dependencies with the reason each is kept and fails when one is added or removed without saying which
+- AT-05.4 (gate) critic-elixir clean at >= warning on changed files -- covers AC-05.6 -- status: to-write. Not run: it needs a subagent, which is hv's to authorise, so AC-05.6 stays unsatisfied. The structural half of AC-05.6 is green in test/config/production_surface_test.exs::"the facade holds no CLI, conversion or watch-loop logic"
 - Coverage: AC-05.1/.2/.3/.6 covered; AC-05.4/.5 non-test with evidence on the AC line
 
 ### WP-06

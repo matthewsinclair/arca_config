@@ -84,18 +84,25 @@ Arca.Config.put!("database.host", "localhost")
 
 ### As a CLI
 
-Arca Config can also be used as a command-line tool:
+Arca Config can also be used as a command-line tool, through a mix task:
 
 ```bash
 # Get a configuration value
-./scripts/cli get database.host
+mix arca.config get database.host
 
 # Set a configuration value
-./scripts/cli set database.host localhost
+mix arca.config set database.host localhost
 
 # List all configuration values
-./scripts/cli list
+mix arca.config list
+
+# Watch a key and print each change until interrupted
+mix arca.config watch database.host
 ```
+
+`./scripts/cli` is a local wrapper around the same task that also loads this repository's own `config/.env` first; it is a convenience for working *on* arca_config, not part of the library's interface.
+
+A value is stored as what it denotes: `true` and `false` become booleans, digits become numbers, and a JSON object or array is decoded. Anything else is stored as the string you typed. There is no longer an escript build target -- it was undocumented and unbuilt, and the mix task is the path that was actually in use.
 
 ## Configuration
 

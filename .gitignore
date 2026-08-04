@@ -44,15 +44,15 @@ peer-name.conf
 # AGENTS.md regeneration safety net (intent agents sync writes this; transient).
 /AGENTS.md.bak
 
-# Never take .env into version control 
-.env 
-.env.*
-
-
-# Ignore any .env files 
-.env 
+# Never take .env into version control
+.env
 .env.*
 config/.env
+
+# This repository's own dev config location, written by ./scripts/cli and by
+# anything run against config/.env. Four of these files were committed once,
+# including a 2024 OAuth config; they are removed and this keeps them out.
+/.arca_config/
 
 # Per-developer Claude Code settings (paths and tool allowlists vary).
 .claude/settings.local.json

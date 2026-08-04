@@ -1,56 +1,85 @@
 name: CI
 
+# One workflow (ruling R6). There used to be two -- `ci.yml` on a single
+# 1.18.4/OTP 28 build and `test.yml` on a two-cell matrix -- running almost the
+# same steps on overlapping triggers, so a change had to be made twice and a
+# green tick meant whichever one you happened to look at.
+#
+# The matrix floors at Elixir 1.18, which is what mix.exs requires, and tops out
+# at the toolchain this library is actually developed on. Without that top cell,
+# CI was green on 1.18 while every local run used 1.20.
+
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 env:
   MIX_ENV: test
-  ARCA_CONFIG_CONFIG_PATH: .arca_config
-  ARCA_CONFIG_CONFIG_FILE: config.json
 
 jobs:
   test:
+    name: Test on OTP ${{ matrix.otp }} / Elixir ${{ matrix.elixir }}
     runs-on: ubuntu-latest
-    
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - otp: '27.0'
+            elixir: '1.18.0'
+          - otp: '28.0'
+            elixir: '1.18.4'
+          - otp: '29.0'
+            elixir: '1.20.2'
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
-      with:
-        elixir-version: '1.18.4'
-        otp-version: '28.0'
-    
-    - name: Restore dependencies cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-mix-
-    
-    - name: Install hex and rebar
-      run: |
-        mix local.hex --force
-        mix local.rebar --force
-    
-    - name: Install dependencies
-      run: mix deps.get
-    
-    - name: Compile dependencies
-      run: mix deps.compile
-    
-    - name: Compile application
-      run: mix compile --warnings-as-errors
-    
-    - name: Run tests
-      run: mix test
-    
-    - name: Check code formatting
-      run: mix format --check-formatted
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-
+            ${{ runner.os }}-mix-
+
+      - name: Install hex and rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile dependencies
+        run: mix deps.compile
+
+      - name: Compile application
+        run: mix compile --warnings-as-errors
+
+      # The suite points itself at a disposable location and fails the run if it
+      # leaves the working tree, the config environment variables or the
+      # application settings changed. ARCA_CONFIG_CONFIG_PATH used to be set
+      # here to `.arca_config`, inside the checkout, which is how test writes
+      # ended up in the repository.
+      - name: Run tests
+        run: mix test
+
+      - name: Check code formatting
+        run: mix format --check-formatted
+
+      - name: Run tests with coverage
+        if: matrix.elixir == '1.20.2'
+        run: mix test --cover

@@ -38,6 +38,13 @@ defmodule Arca.Config.Cfg.Test do
       ~s({"id": "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON", "database": {"host": "localhost"}})
     )
 
+    # Load the location this setup just established. `Cfg.get/1` used to re-read
+    # the file on every call, so pointing the environment variables somewhere new
+    # was enough on its own; it now delegates to the server, which holds one
+    # loaded configuration. Moving the location behind the server's back and
+    # expecting reads to follow is the ambient-location behaviour AR-4 removed.
+    Arca.Config.Server.reload()
+
     on_exit(fn ->
       # Clean up test files
       File.rm(config_file)

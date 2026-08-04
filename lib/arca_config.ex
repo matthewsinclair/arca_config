@@ -141,6 +141,8 @@ defmodule Arca.Config do
   use Application
 
   alias Arca.Config.Cfg
+  alias Arca.Config.CLI
+  alias Arca.Config.Value
   alias Arca.Config.Server
   alias Arca.Config.Supervisor, as: ConfigSupervisor
 
@@ -217,7 +219,7 @@ defmodule Arca.Config do
       |> String.downcase()
       |> String.replace("_", ".")
 
-    case put(key_path, try_convert_value(value)) do
+    case put(key_path, Value.from_string(value)) do
       {:ok, _value} -> :ok
       {:error, reason} -> {key_path, reason}
     end
@@ -587,210 +589,11 @@ defmodule Arca.Config do
   @doc """
   Entry point for the CLI.
 
-  Parses command-line arguments and executes the appropriate action.
+  Delegates to `Arca.Config.CLI.main/1`, where the command specification, the
+  handlers and the value conversion now live. This module kept all of it inline
+  for a long time, which is how the facade came to be an Application callback,
+  an API facade and a command-line program at once.
   """
   @spec main(list(String.t())) :: :ok
-  def main(argv) do
-    case argv do
-      ["set", key | rest] ->
-        # Combine all remaining arguments into a single value
-        value = Enum.join(rest, " ")
-        handle_set(key, value)
-
-      ["get", key | _] ->
-        handle_get(key)
-
-      ["list" | _] ->
-        handle_list()
-
-      ["watch", key | _] ->
-        handle_watch(key)
-
-      _ ->
-        cli_spec()
-        |> Optimus.parse!(argv)
-        |> process_command()
-    end
-  end
-
-  defp cli_spec do
-    Optimus.new!(
-      name: Application.get_env(:arca_config, :name, "arca_config"),
-      description:
-        Application.get_env(
-          :arca_config,
-          :description,
-          "A simple file-based configurator for Elixir apps"
-        ),
-      # From the built application, so there is one version string in the
-      # project rather than a copy in config.exs and a stale default here.
-      version: to_string(Application.spec(:arca_config, :vsn)),
-      author: Application.get_env(:arca_config, :author, "Arca"),
-      about: Application.get_env(:arca_config, :about, "Arca Config CLI"),
-      allow_unknown_args: true,
-      parse_double_dash: true,
-      subcommands: [
-        get: [
-          name: "get",
-          about: "Get a configuration value",
-          args: [
-            key: [
-              value_name: "KEY",
-              help: "The configuration key to get (e.g., 'database.host')",
-              required: true
-            ]
-          ]
-        ],
-        set: [
-          name: "set",
-          about: "Set a configuration value",
-          args: [
-            key: [
-              value_name: "KEY",
-              help: "The configuration key to set (e.g., 'database.host')",
-              required: true
-            ],
-            value: [
-              value_name: "VALUE",
-              help: "The value to set",
-              required: true
-            ]
-          ]
-        ],
-        list: [
-          name: "list",
-          about: "List all configuration values"
-        ],
-        watch: [
-          name: "watch",
-          about: "Watch for changes to a configuration key",
-          args: [
-            key: [
-              value_name: "KEY",
-              help: "The configuration key to watch (e.g., 'database.host')",
-              required: true
-            ]
-          ]
-        ]
-      ]
-    )
-  end
-
-  defp process_command({[:list], _parse_result}) do
-    handle_list()
-  end
-
-  defp process_command({[:get], %{args: %{key: key}}}) do
-    handle_get(key)
-  end
-
-  defp process_command({[:set], %{args: %{key: key, value: value}}}) do
-    handle_set(key, value)
-  end
-
-  defp process_command({[:watch], %{args: %{key: key}}}) do
-    handle_watch(key)
-  end
-
-  defp process_command(_) do
-    IO.puts("Invalid command. Use --help for usage information.")
-    :ok
-  end
-
-  defp handle_get(key) do
-    case get(key) do
-      {:ok, value} ->
-        if is_map(value) do
-          IO.puts(Jason.encode!(value, pretty: true))
-        else
-          IO.puts(value)
-        end
-
-      {:error, reason} ->
-        IO.puts("Error: #{reason}")
-    end
-  end
-
-  defp handle_set(key, value) do
-    # Try to convert string to appropriate type
-    value = try_convert_value(value)
-
-    case put(key, value) do
-      {:ok, _} ->
-        IO.puts("Successfully set '#{key}' to '#{inspect(value)}'")
-
-      {:error, reason} ->
-        IO.puts("Error: #{reason}")
-    end
-  end
-
-  defp handle_list do
-    case reload() do
-      {:ok, config} ->
-        IO.puts(Jason.encode!(config, pretty: true))
-
-      {:error, reason} ->
-        IO.puts("Error: #{reason}")
-    end
-  end
-
-  defp handle_watch(key) do
-    # Subscribe to changes for the key
-    subscribe(key)
-
-    # Print initial value
-    IO.puts("Watching #{key}. Current value:")
-    handle_get(key)
-    IO.puts("\nWaiting for changes... (Press Ctrl+C to exit)")
-
-    # Listen for changes
-    watch_loop(key)
-  end
-
-  defp watch_loop(key) do
-    receive do
-      {:config_updated, key_path, value} ->
-        formatted_key = Enum.join(key_path, ".")
-        IO.puts("\nConfig updated: #{formatted_key}")
-
-        if is_map(value) do
-          IO.puts(Jason.encode!(value, pretty: true))
-        else
-          IO.puts(inspect(value))
-        end
-
-        watch_loop(key)
-    end
-  end
-
-  defp try_convert_value(value) do
-    cond do
-      value == "true" ->
-        true
-
-      value == "false" ->
-        false
-
-      Regex.match?(~r/^-?\d+$/, value) ->
-        String.to_integer(value)
-
-      Regex.match?(~r/^-?\d+\.\d+$/, value) ->
-        String.to_float(value)
-
-      String.starts_with?(value, "[") and String.ends_with?(value, "]") ->
-        case Jason.decode(value) do
-          {:ok, decoded} -> decoded
-          _ -> value
-        end
-
-      String.starts_with?(value, "{") and String.ends_with?(value, "}") ->
-        case Jason.decode(value) do
-          {:ok, decoded} -> decoded
-          _ -> value
-        end
-
-      true ->
-        value
-    end
-  end
+  def main(argv), do: CLI.main(argv)
 end

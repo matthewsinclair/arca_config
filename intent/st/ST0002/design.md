@@ -152,7 +152,7 @@ The inverse scope item hv named ("identify what downstream relies on arca_config
 
 ## Rulings (hv, 2026-08-04)
 
-Contract ratified. Six of seven rulings decided as proposed; R3 remains open and blocks only WP-05 scope.
+Contract ratified. All seven rulings are decided; R3 was the last, on 2026-08-04. The one open coordination item is R1's final wire format, which needs vc because arca_cli parses it.
 
 | #  | Ruling                                                                    | Blocks | Decision                                                                                                              |
 | -- | -------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
