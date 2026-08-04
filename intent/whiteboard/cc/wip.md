@@ -3,9 +3,9 @@ node: cc
 name: Control Claude
 role: control
 session_id: 797c6bb0-eb52-4b00-9870-3095616dfef2
-heartbeat_at: 2026-08-04T18:20Z
-status: active
-focus: "ST0002 -- WP-01 + WP-03 + WP-04 DONE (19/38, suite 152 green); WP-05 needs R3, WP-02 held for vc on R1"
+heartbeat_at: 2026-08-04T18:06Z
+status: paused
+focus: "ST0002 -- WP-01/03/04 DONE (19/38, suite 152 green). Both remaining WPs blocked: WP-02 on vc (R1), WP-05 on hv (R3)"
 claims: [ST0002]
 ---
 
@@ -21,21 +21,19 @@ claims: [ST0002]
 
 vc provisioned its node here at 15:59 (`intent claude ws new vc`), after this session's pickup -- so inboxes exist in both directions and are the primary channel. The handover package `intent/st/ST0002/handover-to-vc.md` still travels on its own, because vc reads it from the arca_cli side too.
 
-**Read `inbox.vc.md` at every fold, not only at pickup.** Three vc entries (15:59, 16:05, 16:13) sat unread for the whole session because the node did not exist when pickup ran.
+**Read `inbox.vc.md` at every fold, not only at pickup.** Three vc entries (15:59, 16:05, 16:13) sat unread for a whole session because the node did not exist when pickup ran. All three are handled and cleared into `.history/20260804/`; the live inbox is empty.
 
 ## DOING
 
-- **WP-01 (AR-1), WP-03 (AR-3) and WP-04 (AR-4) all DONE** (2026-08-04). Gates PASS 6/6, 6/6, 7/7; contract 19/38. Suite 152 green (was 128) across 7 seeds, `--warnings-as-errors` clean, dots-only output. As-built + changed-tests ledger in `intent/st/ST0002/impl.md`.
-- **The suite now proves its own isolation.** `test_helper.exs` baselines the working tree, config env vars, `:arca_config` app settings and known escape paths, and fails the run on drift. It caught a leak that six green seeds had missed, because the residue of the previous run was hiding it.
-- **Ready for vc**: three claimed-dones. Fifteen changed/rewritten tests in the ledger.
-- **Needs hv**: the notification matrix (design.md, AC-03.1 says "ratified" -- implemented and pinned, not blessed), AC-00.4, and **ruling R3, which now blocks the only remaining buildable WP**.
-- Awaiting vc on the R1 error shape (gates WP-02).
-- Inbox check at pickup 16:54Z: no new vc entries since the three read at fold (15:59, 16:05, 16:13). vc active, heartbeat 16:35Z, focus "standby -- verify ST0002 at plan-ratification and at each claimed-done".
+- Localfold complete (2026-08-04T18:06Z). Session record in `.history/20260804/wip.md`; paused for compact. The next `/in-session` pickup re-activates this node.
+- **WP-01 (AR-1), WP-03 (AR-3), WP-04 (AR-4) DONE.** Gates 6/6, 6/6, 7/7; contract 19/38. Suite 152 green (was 128) across 7 seeds, `--warnings-as-errors` clean, dots-only, isolation guard armed. Commits `e82dfbc`, `c66bd29`, `8d82cf4`. As-built + changed-tests ledger in `intent/st/ST0002/impl.md`.
+- **Three claimed-dones awaiting vc**, whose board still reads "standby" at heartbeat 17:20Z and has not yet reacted. Fifteen changed/rewritten tests in the ledger for it to attack.
 
-## TODO (risk order)
+## TODO (risk order, post-compact)
 
-- **Both remaining WPs are now blocked on someone else.** WP-02 needs vc's answer on the R1 error shape; WP-05 needs hv's ruling R3 (escript: extract vs delete). Nothing else in the thread is buildable without one of those two.
-- WP-05 has a part that does not need R3 -- test backdoors out of production modules (AC-05.2), cruft removal (AC-05.5), CI consolidation (AC-05.4, ruling R6) -- so that is the fallback if R3 stays open.
+- **Nothing is buildable without an answer.** WP-02 needs vc on the R1 error shape; WP-05 needs hv's ruling R3 (escript: extract vs delete).
+- **Fallback if R3 stays open**: the R3-independent half of WP-05 -- test backdoors out of production modules (AC-05.2), committed cruft (AC-05.5), CI consolidation (AC-05.4, already ruled by R6). Proposed to hv; awaiting the word.
+- Also needs hv: the notification matrix (design.md -- AC-03.1 says "ratified", and it is implemented and pinned but not blessed), and AC-00.4.
 - WP-06 vc rebuild of arca_cli (710 tests) + release.
 - Per-WP cycle: red-first ATs, implement, green, critic gate, changed-tests flagged in impl.md's ledger, commit.
 
@@ -45,6 +43,7 @@ vc provisioned its node here at 15:59 (`intent claude ws new vc`), after this se
 - Before retiring **any** public symbol, re-run the fleet probe (AC-00.1). Sibling sweep on 2026-08-04 was clean: `arca_id`, `arca_dbutils`, `arca_notionex`, `arca_doc`, `arca_optimus` have zero `Arca.Config` references.
 - arca_cli text-matches our error prose (`arca_cli.ex:1083-1098`). Rewording a not-found message is a silent breaking change to its error dialect until R1 lands on both sides.
 - The suite is green and stays green throughout remediation -- it was green across every finding in the ledger. Green is not evidence here; the ATs are.
+- **`test/test_helper.exs` fails the run if the suite changes the working tree, the config env vars or `:arca_config`'s application settings.** If a new test needs to mutate any of those, it restores them exactly; the guard names the facet that drifted. Do not silence it by widening the baseline.
 - Tests that assert a defect get changed, not preserved, and every such change goes in impl.md's changed-tests ledger for vc.
 - `Arca.Config.Cfg` is aliased `LegacyCfg` (`server.ex:16`) but is the live loader on every load/reload/switch path and a documented public API with doctests. Resolve ownership in WP-02 (AF-37); do not assume it is dead.
 
@@ -63,4 +62,3 @@ vc provisioned its node here at 15:59 (`intent claude ws new vc`), after this se
 - (2026-08-04) **Corrected myself mid-WP-03 on hv's ruling.** I had used "arca_cli registers zero callbacks" as evidence that widening the notification matrix was safe -- the same inference hv overruled, one step removed. An unknown consumer may register one, and the widening makes a callback that writes config reachable on the put path for the first time. Two consequences, both now non-optional: callbacks dispatch off the server process (no deadlock), and a write that changes nothing raises no event (no loop). Both pinned by test.
 - (2026-08-04) The no-change-no-event rule is scoped to **writes**, not reloads. Applying it uniformly broke two tests asserting a bare `reload/0` notifies -- the only written record of that contract, so not mine to narrow. `Server.reload_external/0` added for the watcher, which wants write semantics.
 - (2026-08-04) **A green suite across six seeds was still hiding a leak.** After WP-04's isolation work the suite passed every seed while the guard still reported `.test_app/` appearing in the repo -- the seeds were green only because the directory already existed at baseline, residue of the previous leak masking the next one. Bisecting per file found two more unrestored global mutations. Lesson for the rest of this thread: seed-sweeps prove order-independence, not isolation. Only the before/after comparison proves isolation.
-- (2026-08-04) Ruling R4 turned out to be a test-hygiene detector: while a load from a nonexistent location reported success with an empty config, a test could destroy the location it depended on and still pass. Two such tests surfaced the moment enoent stopped being success. Expect more in WP-04 (AC-04.5).
