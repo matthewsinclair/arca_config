@@ -153,25 +153,21 @@ defmodule Arca.Config do
   """
   @spec load_config_phase() :: :ok | {:error, term()}
   def load_config_phase do
-    # Load initial configuration
-    case Server.load_config() do
-      {:ok, _config} ->
-        # Start file watching now that config is loaded
-        Arca.Config.FileWatcher.start_watching()
+    load_result = Server.load_config()
 
-        # Apply environment overrides
-        apply_env_overrides()
+    # File watching starts either way: a config that failed to load is exactly
+    # the one most likely to be corrected on disk a moment later.
+    Arca.Config.FileWatcher.start_watching()
 
-        :ok
-
-      {:error, reason} ->
-        # Still start file watching and apply overrides even if config load failed
-        Arca.Config.FileWatcher.start_watching()
-        apply_env_overrides()
-
-        {:error, reason}
-    end
+    phase_result(load_result, apply_env_overrides())
   end
+
+  # Both halves of the phase are reported. A load failure dominates when both
+  # fail: overrides applied on top of a config that never loaded are a
+  # consequence of it, not an independent fault.
+  defp phase_result({:ok, _config}, :ok), do: :ok
+  defp phase_result({:ok, _config}, {:error, _reason} = error), do: error
+  defp phase_result({:error, reason}, _override_result), do: {:error, reason}
 
   defp apply_env_overrides do
     # Get the prefix for environment variables
@@ -180,24 +176,29 @@ defmodule Arca.Config do
 
     # Get all environment variables with the override prefix
     System.get_env()
-    |> Enum.filter(fn {key, _} -> String.starts_with?(key, override_prefix) end)
-    |> Enum.each(fn {key, value} ->
-      # Extract the configuration key path from the environment variable
-      key_path =
-        key
-        |> String.replace_prefix(override_prefix, "")
-        |> String.downcase()
-        |> String.replace("_", ".")
-
-      # Convert the value to the appropriate type
-      converted_value = try_convert_value(value)
-
-      # Update the configuration
-      put(key_path, converted_value)
-    end)
-
-    :ok
+    |> Enum.filter(fn {key, _value} -> String.starts_with?(key, override_prefix) end)
+    |> Enum.map(&apply_env_override(&1, override_prefix))
+    |> Enum.reject(&(&1 == :ok))
+    |> collect_override_failures()
   end
+
+  # Apply one override, reporting `{key_path, reason}` on failure so every
+  # failure reaches the caller together instead of being dropped one at a time.
+  defp apply_env_override({env_var, value}, override_prefix) do
+    key_path =
+      env_var
+      |> String.replace_prefix(override_prefix, "")
+      |> String.downcase()
+      |> String.replace("_", ".")
+
+    case put(key_path, try_convert_value(value)) do
+      {:ok, _value} -> :ok
+      {:error, reason} -> {key_path, reason}
+    end
+  end
+
+  defp collect_override_failures([]), do: :ok
+  defp collect_override_failures(failures), do: {:error, {:env_overrides_failed, failures}}
 
   @doc """
   Gets a configuration value.
@@ -445,13 +446,22 @@ defmodule Arca.Config do
     - `{:ok, previous_location}` with the previous path and file settings
     - `{:error, reason}` if an error occurred
 
+  The target location must already hold a config file: switching to a location
+  that has none returns an error and leaves the current location live.
+
   ## Examples
+      iex> new_location = Path.join(System.tmp_dir!(), "arca_switch_doctest")
+      iex> File.mkdir_p!(new_location)
+      iex> File.write!(Path.join(new_location, "test.json"), ~s({"switched": true}))
       iex> {:ok, old_location} = Arca.Config.switch_config_location(
-      ...>   path: "/tmp/test_config",
+      ...>   path: new_location,
       ...>   file: "test.json"
       ...> )
+      iex> Arca.Config.get("switched")
+      {:ok, true}
       iex> # Restore previous location
-      iex> Arca.Config.switch_config_location(old_location)
+      iex> {:ok, _restored} = Arca.Config.switch_config_location(old_location)
+      iex> File.rm_rf(new_location)
   """
   @spec switch_config_location(keyword()) :: {:ok, keyword()} | {:error, term()}
   def switch_config_location(opts \\ []) do

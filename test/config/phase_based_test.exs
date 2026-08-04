@@ -1,6 +1,8 @@
 defmodule Arca.Config.PhaseBasedTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   setup do
     # Store original environment variables
     original_env = %{
@@ -103,6 +105,41 @@ defmodule Arca.Config.PhaseBasedTest do
       System.delete_env("ARCA_CONFIG_PATH")
       System.delete_env("ARCA_CONFIG_FILE")
     end
+  end
+
+  # AT-01.5 (ST0002 acceptance.md). AF-03: apply_env_overrides/0 discarded every
+  # put/2 result, so an override that could not be persisted vanished and
+  # load_config_phase/0 still reported :ok. The config file here is readable but
+  # unwritable, so the load succeeds and only the override write fails.
+  test "failed override surfaces from load_config_phase" do
+    test_path = Path.join(System.tmp_dir!(), "arca_phase_override_#{:rand.uniform(10_000)}")
+    File.mkdir_p!(test_path)
+    test_file = "phase_override.json"
+    full_path = Path.join(test_path, test_file)
+
+    File.write!(full_path, Jason.encode!(%{"database" => %{"host" => "localhost"}}))
+    File.chmod!(full_path, 0o444)
+
+    System.put_env("TEST_APP_CONFIG_PATH", test_path)
+    System.put_env("TEST_APP_CONFIG_FILE", test_file)
+    System.put_env("TEST_APP_CONFIG_OVERRIDE_DATABASE_PORT", "5432")
+    Application.put_env(:arca_config, :config_domain, :test_app)
+
+    on_exit(fn ->
+      System.delete_env("TEST_APP_CONFIG_PATH")
+      System.delete_env("TEST_APP_CONFIG_FILE")
+      System.delete_env("TEST_APP_CONFIG_OVERRIDE_DATABASE_PORT")
+      File.chmod(full_path, 0o644)
+      File.rm_rf!(test_path)
+    end)
+
+    log =
+      capture_log(fn ->
+        assert {:error, {:env_overrides_failed, [{"database.port", :eacces}]}} =
+                 Arca.Config.load_config_phase()
+      end)
+
+    assert log =~ "Failed to write config file"
   end
 
   test "environment overrides are applied during phase loading" do

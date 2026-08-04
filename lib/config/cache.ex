@@ -29,8 +29,9 @@ defmodule Arca.Config.Cache do
   ## Returns
     - `{:ok, value}` if the value is found
     - `{:error, :not_found}` if the value is not in the cache
+    - `{:error, :cache_unavailable}` if the cache process is not running
   """
-  @spec get(list(String.t())) :: {:ok, any()} | {:error, :not_found}
+  @spec get(list(String.t())) :: {:ok, any()} | {:error, :not_found | :cache_unavailable}
   def get(key_path) when is_list(key_path) do
     try do
       case :ets.lookup(@table_name, key_path) do
@@ -38,7 +39,10 @@ defmodule Arca.Config.Cache do
         [] -> {:error, :not_found}
       end
     rescue
-      ArgumentError -> {:error, :not_found}
+      # The named table only exists while the cache process owns it. A missing
+      # table means the cache is down, which is not the same answer as "this key
+      # is not cached" -- callers must be able to tell them apart.
+      ArgumentError -> {:error, :cache_unavailable}
     end
   end
 
@@ -51,16 +55,11 @@ defmodule Arca.Config.Cache do
 
   ## Returns
     - `{:ok, value}` with the value that was stored
+    - `{:error, :cache_unavailable}` if the cache process is not running
   """
-  @spec put(list(String.t()), any()) :: {:ok, any()}
+  @spec put(list(String.t()), any()) :: {:ok, any()} | {:error, :cache_unavailable}
   def put(key_path, value) when is_list(key_path) do
-    try do
-      GenServer.call(__MODULE__, {:put, key_path, value})
-    rescue
-      _error ->
-        # Return success even if server is down for tests
-        {:ok, value}
-    end
+    call_cache({:put, key_path, value})
   end
 
   @doc """
@@ -68,16 +67,11 @@ defmodule Arca.Config.Cache do
 
   ## Returns
     - `{:ok, :cleared}` when the cache is successfully cleared
+    - `{:error, :cache_unavailable}` if the cache process is not running
   """
-  @spec clear() :: {:ok, :cleared}
+  @spec clear() :: {:ok, :cleared} | {:error, :cache_unavailable}
   def clear do
-    try do
-      GenServer.call(__MODULE__, :clear)
-    rescue
-      _error ->
-        # Return success even if server is down for tests
-        {:ok, :cleared}
-    end
+    call_cache(:clear)
   end
 
   @doc """
@@ -88,16 +82,21 @@ defmodule Arca.Config.Cache do
 
   ## Returns
     - `{:ok, :invalidated}` when the key path is successfully invalidated
+    - `{:error, :cache_unavailable}` if the cache process is not running
   """
-  @spec invalidate(list(String.t())) :: {:ok, :invalidated}
+  @spec invalidate(list(String.t())) :: {:ok, :invalidated} | {:error, :cache_unavailable}
   def invalidate(key_path) when is_list(key_path) do
-    try do
-      GenServer.call(__MODULE__, {:invalidate, key_path})
-    rescue
-      _error ->
-        # Return success even if server is down for tests
-        {:ok, :invalidated}
-    end
+    call_cache({:invalidate, key_path})
+  end
+
+  # A down cache exits the caller rather than raising, so the previous `rescue`
+  # clauses could never fire for the case they claimed to cover -- they only
+  # fabricated success. Catch the exit and report it, so unavailability reaches
+  # the caller as a value.
+  defp call_cache(message) do
+    GenServer.call(__MODULE__, message)
+  catch
+    :exit, _reason -> {:error, :cache_unavailable}
   end
 
   # Server callbacks

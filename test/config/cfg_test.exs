@@ -2,8 +2,15 @@ defmodule Arca.Config.Cfg.Test do
   use ExUnit.Case, async: false
   alias Arca.Config.Cfg
 
-  # Set up temporary test environment for doctests
-  setup_all do
+  # Set up temporary test environment for doctests.
+  #
+  # Per-test, not setup_all: several doctests in this module set a config-location
+  # env var and then delete it, wiping the value this block establishes. Before
+  # ruling R4 that damage was invisible, because a load from the resulting
+  # nonexistent location still reported success with an empty config. Re-asserting
+  # the location per test makes the module order-independent. The wider isolation
+  # sweep is AC-04.5 (WP-04).
+  setup do
     # Set up test paths for doctest
     app_name = Arca.Config.Cfg.config_domain() |> to_string()
     test_path = System.tmp_dir!()
@@ -24,6 +31,10 @@ defmodule Arca.Config.Cfg.Test do
     app_config_file = Path.join(app_config_dir, "config.json")
     File.mkdir_p!(app_config_dir)
 
+    # This one is inside the repo tree and is tracked, so capture it and put it
+    # back exactly as found rather than removing it on the way out.
+    original_app_config = File.read(app_config_file)
+
     File.write!(
       config_file,
       ~s({"id": "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON", "database": {"host": "localhost"}})
@@ -38,13 +49,18 @@ defmodule Arca.Config.Cfg.Test do
     on_exit(fn ->
       # Clean up test files
       File.rm(config_file)
-      File.rm(app_config_file)
+      restore_file(app_config_file, original_app_config)
       System.delete_env(app_specific_path_var)
       System.delete_env(app_specific_file_var)
     end)
 
     :ok
   end
+
+  # Put a file back as it was found: rewrite what was there, or remove it if it
+  # did not exist. Pattern-matched so on_exit stays free of if/case.
+  defp restore_file(path, {:ok, content}), do: File.write!(path, content)
+  defp restore_file(path, {:error, _reason}), do: File.rm(path)
 
   doctest Arca.Config
   doctest Arca.Config.Cfg
@@ -114,17 +130,19 @@ defmodule Arca.Config.Cfg.Test do
       assert config["id"] == "DOT_SLASH_DOT_LL_SLASH_CONFIG_DOT_JSON"
     end
 
-    test "load nonexistent configuration file (returns empty config)" do
-      # Check that if we set up a bad file that load() will return an empty config
+    # Ruling R4 (ST0002): a missing config file is an empty config only for the
+    # first-run bootstrap caller. This test previously asserted the opposite --
+    # that any load of a nonexistent file succeeds with %{} -- which is how a
+    # typo'd location read as a successful load of nothing (AF-06).
+    test "load nonexistent configuration file (fails, and bootstraps empty)" do
       # Jam some nonexistent path into the env vars
       app_specific_path_var = "#{Cfg.env_var_prefix()}_CONFIG_PATH"
       app_specific_file_var = "#{Cfg.env_var_prefix()}_CONFIG_FILE"
       System.put_env(app_specific_path_var, "/nonexistent/path/")
       System.put_env(app_specific_file_var, "nonexistent.json")
 
-      # Check that we get an empty config for a nonexistent file
-      assert {:ok, config} = Cfg.load()
-      assert config == %{}
+      assert {:error, "Failed to load config file: enoent"} = Cfg.load()
+      assert {:ok, %{}} == Cfg.load(nil, bootstrap: true)
 
       # Clean up
       System.delete_env(app_specific_path_var)

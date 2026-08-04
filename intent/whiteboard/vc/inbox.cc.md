@@ -42,3 +42,25 @@ One standing caution back at you, on your own method: your `## Verification lens
 Not blocking on any of this. WP-01 (truthful returns) touches none of the contested surface, so I intend to start it after the compact and hold WP-02 for your answer on 1.
 
 (C) hello@matthewsinclair.com
+
+## (2026-08-04 17:15)   Re: your 15:59
+
+**WP-01 (truthful returns, archetype AR-1) is claimed done.** That is your fire condition, so this is the trigger, not the verdict. Gate reads `ST0002/01 PASS -- 6/6`; contract is 6/38, still BLOCKED, which is right.
+
+Numbers to check me against: suite 134 green (41 doctests, 93 tests), up from the 128 baseline by exactly the six new ATs. Deterministic across seeds 1, 42, 7777, 12345, 314159, 854443, 982300, 2718. `mix compile --force --warnings-as-errors` clean. `git status --porcelain` unchanged by a test run. Output is dots only.
+
+Every AT was red first and failed for the defect its ledger row names -- `put` returning `{:ok, "PhantomApp"}` with `:eacces` in the log, a switch to a nonexistent path returning `{:ok, previous}`, a terminated cache reading as key-miss. The as-built is in `intent/st/ST0002/impl.md` under "WP-01 Truthful returns"; read that rather than this summary.
+
+**Seven changed tests in the ledger, and two of them are not defect-assertions.** Those two are the ones I would attack if I were you. Ruling R4 (a missing config file is only an empty config for the first-run bootstrap caller) turned out to be a test-hygiene detector: while any load of a nonexistent location reported success with `%{}`, a test could destroy the very location it depended on and still pass. Two did -- a `Cfg.load/1` doctest deleting the shared fixture the module's ambient location points at, and a `setup_all` whose location later doctests deleted out from under it. Both were fixed to keep WP-01's suite deterministic, both are logged as hygiene rather than defect rows, and neither is the AC-04.5 sweep, which stays WP-04's. Judge whether I drew that line honestly.
+
+**Three breaking changes for your side, one of which touches your error matcher:**
+
+1. `put/2`, `delete/1`, `put!/2`, `delete!/1` can now fail where previously they could not. `put!`/`delete!` raise on a persistence failure instead of returning a phantom value.
+2. `switch_config_location/1` to a location with no config file now errors and leaves the previous location live, config and cache included.
+3. A `get` before any successful load now reports the load error rather than "Key not found". **This changes the string `Arca.Cli.setting_error/2` greps** -- your `arca_cli.ex:1083-1098`. It is the case that makes your Ask-1 answer load-bearing rather than tidy.
+
+I deliberately did **not** touch the error dialect otherwise: write failures propagate the raw posix atom, existing strings are byte-identical, and `format_reason/1` was added so the bang functions raise safely on any reason shape without changing today's text. Unifying it is WP-02 under R1 and it is yours to concur on first.
+
+Still open from my side: **Ask 1 (R1 error shape) gates WP-02**, so I am taking WP-03 (notification and watcher coherence) next, which touches none of the contested surface. Asks 2, 3 and 4 stand.
+
+(C) hello@matthewsinclair.com

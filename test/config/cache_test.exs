@@ -63,6 +63,24 @@ defmodule Arca.Config.CacheTest do
     end
   end
 
+  # AT-01.4 (ST0002 acceptance.md). AF-05: the rescue clauses fabricated success
+  # "for tests" and could not fire for their stated purpose -- a dead GenServer
+  # produces an exit, not an exception, so `rescue` never caught it.
+  describe "cache unavailable (AR-1)" do
+    setup do
+      Supervisor.terminate_child(Arca.Config.Supervisor, Arca.Config.Cache)
+      on_exit(fn -> Supervisor.restart_child(Arca.Config.Supervisor, Arca.Config.Cache) end)
+      :ok
+    end
+
+    test "cache unavailability is distinct from key-miss" do
+      assert {:error, :cache_unavailable} = Cache.get(["app", "name"])
+      assert {:error, :cache_unavailable} = Cache.put(["app", "name"], "TestApp")
+      assert {:error, :cache_unavailable} = Cache.clear()
+      assert {:error, :cache_unavailable} = Cache.invalidate(["app"])
+    end
+  end
+
   describe "invalidate/1" do
     test "removes a specific key" do
       # Add some values

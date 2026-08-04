@@ -15,7 +15,7 @@
 - [x] Post-ratification corrections: AC-05.1 withdrawn/rewritten per hv's dep ruling; AF-40 + AC-04.7 added from vc's config/.env lead; AF-15 extended with `ansi_enabled:`
 - [ ] hv: approve or reject AC-00.4 (proposed scope addition -- pin downstream-relied-upon surface with tests here)
 - [ ] vc: concur on the R1 error shape before WP-02 lands (handover-to-vc.md, Ask 1)
-- [ ] WP-01 Truthful returns (AR-1)
+- [x] WP-01 Truthful returns (AR-1) -- landed 2026-08-04, gate PASS 6/6; suite 134 green (was 128), deterministic across 8 seeds
 - [ ] WP-02 One lookup path, one dialect, complete facade (AR-2)
 - [ ] WP-03 Notification and watcher coherence (AR-3)
 - [ ] WP-04 Location model (AR-4)
@@ -25,6 +25,8 @@
 ## Task Notes
 
 Per-WP cycle: red ATs first, implement, green, critic gate, changed-tests flagged in impl.md ledger, commit. No WP starts before the contract is ratified.
+
+Standing since WP-01 (hv, 2026-08-04): suite output is dots only. Production logging that a test provokes deliberately gets captured with `ExUnit.CaptureLog` and asserted, never printed.
 
 ## Dependencies
 

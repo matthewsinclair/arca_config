@@ -3,7 +3,7 @@ verblock: "04 Aug 2026:v0.1: matts - Initial version"
 wp_id: WP-01
 title: "Truthful returns: persistence failures surface"
 scope: Small
-status: Not Started
+status: Done
 ---
 
 # WP-01: Truthful returns: persistence failures surface

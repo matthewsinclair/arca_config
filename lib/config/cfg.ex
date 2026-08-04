@@ -109,48 +109,36 @@ defmodule Arca.Config.Cfg do
     - `config_file`: The path to the configuration file (optional).
 
   ## Examples
-      iex> test_path = System.tmp_dir!()
-      iex> test_file = "config_test.json"
-      iex> app_specific_path_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_PATH"
-      iex> app_specific_file_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_FILE"
-      iex> System.put_env(app_specific_path_var, test_path)
-      iex> System.put_env(app_specific_file_var, test_file)
-      iex> File.write!(Path.join(test_path, test_file), ~s({"id": "TEST_CONFIG"}))
-      iex> {:ok, cfg} = Arca.Config.Cfg.load()
+      iex> test_file = Path.join(System.tmp_dir!(), "arca_cfg_load_doctest.json")
+      iex> File.write!(test_file, ~s({"id": "TEST_CONFIG"}))
+      iex> {:ok, cfg} = Arca.Config.Cfg.load(test_file)
       iex> cfg["id"]
       "TEST_CONFIG"
-      iex> File.rm(Path.join(test_path, test_file))
-      iex> System.delete_env(app_specific_path_var)
-      iex> System.delete_env(app_specific_file_var)
+      iex> File.rm(test_file)
+      :ok
   """
-  @spec load(String.t() | nil) :: {:ok, map()} | {:error, String.t()}
-  def load(config_file \\ nil) do
-    file_path =
-      if config_file do
-        config_file
-      else
-        config_file()
-      end
-
-    file_path
+  @spec load(String.t() | nil, keyword()) :: {:ok, map()} | {:error, String.t()}
+  def load(config_file \\ nil, opts \\ []) do
+    (config_file || config_file())
     |> Path.expand()
     |> File.read()
-    |> handle_file_read_result()
+    |> handle_file_read_result(Keyword.get(opts, :bootstrap, false))
   end
 
-  defp handle_file_read_result({:ok, content}) do
+  defp handle_file_read_result({:ok, content}, _bootstrap) do
     content
     |> normalize_content()
     |> Jason.decode()
     |> handle_decode_result()
   end
 
-  defp handle_file_read_result({:error, :enoent}) do
-    # Return an empty config if the file doesn't exist
-    {:ok, %{}}
-  end
+  # First-run bootstrap only (ST0002 ruling R4). A missing config file is an
+  # empty config when the caller is the initial load phase, and an error
+  # everywhere else -- otherwise a typo'd or vanished location reads as a
+  # successful load of nothing.
+  defp handle_file_read_result({:error, :enoent}, true), do: {:ok, %{}}
 
-  defp handle_file_read_result({:error, reason}),
+  defp handle_file_read_result({:error, reason}, _bootstrap),
     do: {:error, "Failed to load config file: #{reason}"}
 
   defp normalize_content(""), do: "{}"

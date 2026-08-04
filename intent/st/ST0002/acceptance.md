@@ -31,7 +31,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AC-00.3 (non-test) Every test changed because it asserted a defect is listed in impl.md's changed-tests ledger with before/after behaviour -- evidence: impl.md ledger -- satisfied: no
 - AC-00.4 (PROPOSED -- scope addition, needs hv) What downstream relies on arca_config for is identified and pinned by tests **here**, so the consumer contract is enforced rather than assumed. Arises from hv's ruling on the dependency retraction: in-repo silence over public surface signals untested contract surface, and the remedy is coverage, not deletion. Covered by AT-00.1
 
-### WP-01 -- Truthful returns (status: TODO)
+### WP-01 -- Truthful returns (status: DONE 2026-08-04, all six ATs green)
 
 - AC-01.1 `put/2` and `delete/1` return `{:error, _}` when persistence fails, and neither server state nor cache advances past the failed write (a subsequent `get` reflects disk, not the phantom value)
 - AC-01.2 `put!/2` and `delete!/1` raise on persistence failure
@@ -92,13 +92,13 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### WP-01
 
-- AT-01.1 test/config/server_test.exs::"put returns error and preserves state on unwritable location" -- covers AC-01.1 -- status: to-write (red-first)
-- AT-01.2 test/config/server_test.exs::"put!/delete! raise on persistence failure" -- covers AC-01.2 -- status: to-write (red-first)
-- AT-01.3 test/config/server_test.exs::"failed load surfaces as load error not key-miss" -- covers AC-01.3 -- status: to-write (red-first)
-- AT-01.4 test/config/cache_test.exs::"cache unavailability is distinct from key-miss" -- covers AC-01.4 -- status: to-write (red-first)
-- AT-01.5 test/config/phase_based_test.exs::"failed override surfaces from load_config_phase" -- covers AC-01.5 -- status: to-write (red-first)
-- AT-01.6 test/config/switch_location_test.exs::"switch to nonexistent path errors and preserves location" -- covers AC-01.6 -- status: to-write (red-first)
-- Coverage: AC-01.1..6 each have an AT; none uncovered
+- AT-01.1 test/config/server_test.exs::"put returns error and preserves state on unwritable location" (+ the delete twin) -- covers AC-01.1 -- status: green
+- AT-01.2 test/config/server_test.exs::"put!/delete! raise on persistence failure" -- covers AC-01.2 -- status: green
+- AT-01.3 test/config/server_test.exs::"failed load surfaces as load error not key-miss" -- covers AC-01.3 -- status: green
+- AT-01.4 test/config/cache_test.exs::"cache unavailability is distinct from key-miss" -- covers AC-01.4 -- status: green
+- AT-01.5 test/config/phase_based_test.exs::"failed override surfaces from load_config_phase" -- covers AC-01.5 -- status: green
+- AT-01.6 test/config/switch_location_test.exs::"switch to nonexistent path errors and preserves location" -- covers AC-01.6 -- status: green
+- Coverage: AC-01.1..6 each have an AT; none uncovered. All six were red first, each for the defect its design.md ledger row describes; landed 2026-08-04 (impl.md has the as-built and the changed-tests ledger).
 
 ### WP-02
 

@@ -1,6 +1,9 @@
 defmodule Arca.Config.ServerTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
+  alias Arca.Config.Cache
   alias Arca.Config.Server
 
   setup do
@@ -316,6 +319,71 @@ defmodule Arca.Config.ServerTest do
     test "deletes a key and returns :deleted" do
       assert :deleted = Server.delete!("app.name")
       assert {:error, _} = Server.get("app.name")
+    end
+  end
+
+  # AT-01.1, AT-01.2 (ST0002 acceptance.md). Reproduces probe P3b: the config
+  # file stays readable but unwritable, so the load succeeds and only the
+  # persist fails -- the exact shape of AF-01/AF-02.
+  describe "persistence failure (AR-1)" do
+    setup %{test_file: test_file} do
+      File.chmod!(test_file, 0o444)
+      on_exit(fn -> File.chmod(test_file, 0o644) end)
+      :ok
+    end
+
+    test "put returns error and preserves state on unwritable location", %{test_file: test_file} do
+      on_disk_before = File.read!(test_file)
+
+      log = capture_log(fn -> assert {:error, :eacces} = Server.put("app.name", "PhantomApp") end)
+
+      assert log =~ "Failed to write config file"
+      assert File.read!(test_file) == on_disk_before
+      assert {:ok, "TestApp"} = Server.get("app.name")
+    end
+
+    test "delete returns error and preserves state on unwritable location", %{
+      test_file: test_file
+    } do
+      on_disk_before = File.read!(test_file)
+
+      log = capture_log(fn -> assert {:error, :eacces} = Server.delete("app.name") end)
+
+      assert log =~ "Failed to write config file"
+      assert File.read!(test_file) == on_disk_before
+      assert {:ok, "TestApp"} = Server.get("app.name")
+    end
+
+    test "put!/delete! raise on persistence failure" do
+      capture_log(fn ->
+        assert_raise RuntimeError, ~r/eacces/, fn -> Server.put!("app.name", "PhantomApp") end
+        assert_raise RuntimeError, ~r/eacces/, fn -> Server.delete!("app.name") end
+      end)
+    end
+  end
+
+  # AT-01.3 (ST0002 acceptance.md). AF-04: an on-demand load failure was marked
+  # `loaded: true` with an empty config, so every subsequent key reported
+  # "Key not found" and the real cause never reached the caller.
+  describe "load failure (AR-1)" do
+    setup %{test_file: test_file} do
+      File.write!(test_file, "{not json")
+      Cache.clear()
+      :sys.replace_state(Server, fn _ -> %{config: %{}, loaded: false} end)
+
+      on_exit(fn ->
+        File.write!(test_file, Jason.encode!(%{"app" => %{"name" => "TestApp"}}))
+        Server.reload()
+      end)
+
+      :ok
+    end
+
+    test "failed load surfaces as load error not key-miss" do
+      assert {:error, reason} = Server.get("app.name")
+
+      assert reason =~ "Error parsing config"
+      refute reason == "Key not found"
     end
   end
 

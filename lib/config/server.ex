@@ -42,17 +42,19 @@ defmodule Arca.Config.Server do
 
   # Standard get operation
   defp normal_get(key_path) do
-    # Try to get from cache first
+    # Try to get from cache first. A miss and an unavailable cache lead to the
+    # same next step -- ask the server -- but they are distinct answers at the
+    # cache API, so the difference stays visible where it matters.
     case Cache.get(key_path) do
       {:ok, value} ->
         {:ok, value}
 
-      {:error, :not_found} ->
+      {:error, _not_cached} ->
         # Not in cache, try to get from disk and update cache if found
         case GenServer.call(__MODULE__, {:get, key_path}) do
           {:ok, value} = result ->
             # Update cache with the value
-            Cache.put(key_path, value)
+            key_path |> Cache.put(value) |> report_cache_result()
             result
 
           error ->
@@ -76,8 +78,11 @@ defmodule Arca.Config.Server do
   @spec get!(String.t() | atom() | list()) :: any() | no_return()
   def get!(key) do
     case get(key) do
-      {:ok, value} -> value
-      {:error, reason} -> raise RuntimeError, message: "Configuration error: #{reason}"
+      {:ok, value} ->
+        value
+
+      {:error, reason} ->
+        raise RuntimeError, message: "Configuration error: #{format_reason(reason)}"
     end
   end
 
@@ -114,8 +119,11 @@ defmodule Arca.Config.Server do
   @spec put!(String.t() | atom() | list(), any()) :: any() | no_return()
   def put!(key, value) do
     case put(key, value) do
-      {:ok, result} -> result
-      {:error, reason} -> raise RuntimeError, message: "Configuration error: #{reason}"
+      {:ok, result} ->
+        result
+
+      {:error, reason} ->
+        raise RuntimeError, message: "Configuration error: #{format_reason(reason)}"
     end
   end
 
@@ -150,10 +158,19 @@ defmodule Arca.Config.Server do
   @spec delete!(String.t() | atom() | list()) :: :deleted | no_return()
   def delete!(key) do
     case delete(key) do
-      {:ok, result} -> result
-      {:error, reason} -> raise RuntimeError, message: "Configuration error: #{reason}"
+      {:ok, result} ->
+        result
+
+      {:error, reason} ->
+        raise RuntimeError, message: "Configuration error: #{format_reason(reason)}"
     end
   end
+
+  # Error reasons are still a mixed dialect (WP-02 / ruling R1 unifies them).
+  # Binaries pass through so existing message text is unchanged; anything else
+  # is inspected, so a raise can never itself fail on the reason it reports.
+  defp format_reason(reason) when is_binary(reason), do: reason
+  defp format_reason(reason), do: inspect(reason)
 
   @doc """
   Reloads the configuration from disk.
@@ -407,21 +424,19 @@ defmodule Arca.Config.Server do
 
   @impl true
   def handle_call(:load_config, _from, state) do
-    # Load initial configuration
-    case LegacyCfg.load() do
+    # This is the documented first-run path, and the only caller allowed to read
+    # a missing config file as an empty one (ruling R4).
+    case LegacyCfg.load(nil, bootstrap: true) do
       {:ok, config} ->
-        # Initialize cache with loaded config
-        Cache.clear()
-        build_cache(config)
+        rebuild_cache(config)
 
         {:reply, {:ok, config}, %{state | config: config, loaded: true}}
 
       {:error, _reason} = error ->
-        # Initialize with empty config on error but still mark as loaded
-        Cache.clear()
-        build_cache(%{})
-
-        {:reply, error, %{state | config: %{}, loaded: true}}
+        # A real load failure (unparseable or unreadable file) is not an empty
+        # config. Leave state untouched and unloaded so the caller sees the
+        # failure and a later load can still succeed.
+        {:reply, error, state}
     end
   end
 
@@ -438,25 +453,9 @@ defmodule Arca.Config.Server do
 
   @impl true
   def handle_call({:get, key_path}, _from, state) do
-    # If config hasn't been loaded yet, load it on-demand
-    state_to_use =
-      if map_size(state.config) == 0 and not state.loaded do
-        case LegacyCfg.load() do
-          {:ok, config} ->
-            Cache.clear()
-            build_cache(config)
-            %{state | config: config, loaded: true}
-
-          {:error, _} ->
-            # If loading fails, mark as loaded but keep empty config
-            %{state | loaded: true}
-        end
-      else
-        state
-      end
-
-    result = get_in_nested(state_to_use.config, key_path)
-    {:reply, result, state_to_use}
+    state
+    |> ensure_loaded()
+    |> reply_to_get(key_path)
   end
 
   @impl true
@@ -467,23 +466,19 @@ defmodule Arca.Config.Server do
     # Update in-memory config (merging with current config from file)
     new_config = put_in_nested(current_config, key_path, value)
 
-    # Write to file
-    write_config(new_config)
+    case write_config(new_config) do
+      :ok ->
+        key_path |> Cache.put(value) |> report_cache_result()
+        notify_change(key_path, new_config)
 
-    # Update cache
-    Cache.put(key_path, value)
+        {:reply, {:ok, value}, %{state | config: new_config}}
 
-    # Get all paths that need notification (self and ancestors)
-    paths_to_notify = get_notification_paths(key_path, new_config)
-
-    # Send process message to handle notifications asynchronously
-    Process.send(self(), {:notify_paths, paths_to_notify}, [:noconnect])
-
-    # Notify all callbacks of the change
-    notify_callbacks()
-
-    # Return success
-    {:reply, {:ok, value}, %{state | config: new_config}}
+      {:error, reason} ->
+        # The write did not land, so neither state nor cache may advance past
+        # it: a later read must reflect the disk, not the value we failed to
+        # persist. No notification either -- nothing changed.
+        {:reply, {:error, reason}, state}
+    end
   end
 
   @impl true
@@ -494,32 +489,25 @@ defmodule Arca.Config.Server do
     # Delete the key path from config
     new_config = delete_in_nested(current_config, key_path)
 
-    # Write to file
-    write_config(new_config)
+    case write_config(new_config) do
+      :ok ->
+        key_path |> Cache.invalidate() |> report_cache_result()
+        notify_change(key_path, current_config)
 
-    # Invalidate cache
-    Cache.invalidate(key_path)
+        {:reply, {:ok, :deleted}, %{state | config: new_config}}
 
-    # Get all paths that need notification (self and ancestors)
-    paths_to_notify = get_notification_paths(key_path, current_config)
-
-    # Send process message to handle notifications asynchronously
-    Process.send(self(), {:notify_paths, paths_to_notify}, [:noconnect])
-
-    # Notify all callbacks of the change
-    notify_callbacks()
-
-    # Return success
-    {:reply, {:ok, :deleted}, %{state | config: new_config}}
+      {:error, reason} ->
+        # As for put/2: a failed write leaves state and cache exactly as they
+        # were, so the deleted-looking key is still readable and still on disk.
+        {:reply, {:error, reason}, state}
+    end
   end
 
   @impl true
   def handle_call(:reload, _from, state) do
     case LegacyCfg.load() do
       {:ok, config} ->
-        # Clear and rebuild cache
-        Cache.clear()
-        build_cache(config)
+        rebuild_cache(config)
 
         # Notify all callbacks of the change
         notify_callbacks()
@@ -563,14 +551,11 @@ defmodule Arca.Config.Server do
       end
     end
 
-    # Clear the cache
-    Cache.clear()
-
     # Load configuration from new location
     case LegacyCfg.load() do
       {:ok, config} ->
         # Rebuild cache with new config
-        build_cache(config)
+        rebuild_cache(config)
 
         # Restart file watcher with new location
         Arca.Config.FileWatcher.start_watching()
@@ -582,7 +567,10 @@ defmodule Arca.Config.Server do
         {:reply, {:ok, previous_location}, %{state | config: config, loaded: true}}
 
       {:error, reason} ->
-        # On error, restore previous environment variables
+        # On error the previous location stays live, so restore its environment
+        # variables, its cache, and its watcher -- the switch did not happen.
+        rebuild_cache(state.config)
+
         if previous_location[:path] do
           System.put_env(path_var, previous_location[:path])
         else
@@ -600,6 +588,30 @@ defmodule Arca.Config.Server do
 
         {:reply, {:error, reason}, state}
     end
+  end
+
+  # Load on demand the first time a key is read before the load phase has run.
+  defp ensure_loaded(%{config: config, loaded: false} = state) when map_size(config) == 0 do
+    case LegacyCfg.load() do
+      {:ok, loaded_config} ->
+        rebuild_cache(loaded_config)
+        {:ok, %{state | config: loaded_config, loaded: true}}
+
+      {:error, reason} ->
+        # Stay unloaded so a later read retries. Marking the failure as "loaded"
+        # turned every subsequent key into "Key not found" and lost the cause.
+        {:error, reason, state}
+    end
+  end
+
+  defp ensure_loaded(state), do: {:ok, state}
+
+  defp reply_to_get({:ok, state}, key_path) do
+    {:reply, get_in_nested(state.config, key_path), state}
+  end
+
+  defp reply_to_get({:error, reason, state}, _key_path) do
+    {:reply, {:error, reason}, state}
   end
 
   # Read the current configuration from file or fall back to provided config
@@ -697,20 +709,18 @@ defmodule Arca.Config.Server do
     end
   end
 
-  # Write configuration to the current config file
+  # Write configuration to the current config file.
+  # Returns :ok, or {:error, reason} when the write did not reach the disk --
+  # callers must not advance any state on the error branch.
+  @spec write_config(map()) :: :ok | {:error, term()}
   defp write_config(config) do
     require Logger
 
     # Always get a fresh config file path to ensure we have the latest environment settings
     # This is critical when environment variables change during runtime
-    config_path = Arca.Config.Cfg.config_file()
-
-    # Extract directory from the full path
     # IMPORTANT: Always fully expand paths to prevent recursive directory creation issues
     # Path.expand converts paths like "./.config/" or "/abs/path" to their absolute form
-    expanded_config_path = Path.expand(config_path)
-
-    # No logging during normal operation
+    expanded_config_path = Arca.Config.Cfg.config_file() |> Path.expand()
 
     # Register a unique write token to avoid self-notifications
     token = System.monotonic_time()
@@ -721,26 +731,52 @@ defmodule Arca.Config.Server do
 
     # Ensure parent directory exists and file exists before writing
     # This now explicitly creates the directory/file only when needed for writing
-    Arca.Config.FileWatcher.ensure_config_exists(config, true)
-
-    # Write to the absolute path
-    write_file_with_logging(expanded_config_path, encoded_config)
-  end
-
-  # Write to file with error logging
-  defp write_file_with_logging(path, content) do
-    case File.write(path, content) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        require Logger
-        Logger.error("Failed to write config file: #{inspect(reason)}")
+    with :ok <- Arca.Config.FileWatcher.ensure_config_exists(config, true),
+         :ok <- File.write(expanded_config_path, encoded_config) do
+      :ok
+    else
+      {:error, reason} = error ->
+        Logger.error("Failed to write config file #{expanded_config_path}: #{inspect(reason)}")
+        error
     end
   end
 
-  defp build_cache(config) do
-    flatten_and_cache(config)
+  # Notify subscribers of a mutated key path and its ancestors, then run the
+  # 0-arity callbacks. Only ever called once a mutation has actually landed.
+  defp notify_change(key_path, config) do
+    paths_to_notify = get_notification_paths(key_path, config)
+    Process.send(self(), {:notify_paths, paths_to_notify}, [:noconnect])
+    notify_callbacks()
+  end
+
+  # Repopulate the cache from a freshly loaded config. Clearing first reports in
+  # one call whether the cache is available at all, so a cache that is down
+  # costs one line rather than one per key.
+  defp rebuild_cache(config) do
+    case Cache.clear() do
+      {:ok, :cleared} ->
+        flatten_and_cache(config)
+        :ok
+
+      {:error, :cache_unavailable} = error ->
+        report_cache_result(error)
+    end
+  end
+
+  # The disk write is the contract; the cache only accelerates reads in front of
+  # it. A cache that is down has no table at all, so it cannot serve a stale
+  # value -- the next read falls through to server state. Report the degradation
+  # rather than discarding it, but do not fail a write that did land on disk.
+  defp report_cache_result({:ok, _result}), do: :ok
+
+  defp report_cache_result({:error, :cache_unavailable}) do
+    require Logger
+
+    Logger.warning(
+      "Config cache unavailable; reads fall through to server state until it restarts"
+    )
+
+    :ok
   end
 
   defp flatten_and_cache(config, prefix \\ []) do

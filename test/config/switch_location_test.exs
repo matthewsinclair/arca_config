@@ -185,12 +185,17 @@ defmodule Arca.Config.SwitchLocationTest do
     end
 
     test "handles switch with only path change", %{location2_dir: location2_dir} do
+      # The filename is retained across a path-only switch, so location2 needs a
+      # config.json of its own to switch into.
+      File.write!(
+        Path.join(location2_dir, "config.json"),
+        Jason.encode!(%{"location" => "two-via-config-json"}, pretty: true)
+      )
+
       # Switch with only path (should use same filename)
       {:ok, previous} = Config.switch_config_location(path: location2_dir)
 
-      # Should look for config.json in location2
-      # Since location2 doesn't have config.json, it should be empty or error
-      assert {:error, _} = Config.get("location")
+      assert {:ok, "two-via-config-json"} = Config.get("location")
 
       # Restore
       Config.switch_config_location(previous)
@@ -214,20 +219,27 @@ defmodule Arca.Config.SwitchLocationTest do
       assert {:ok, true} = Config.get("alt")
     end
 
-    test "handles error when switching to non-existent location" do
-      # Try to switch to non-existent location
-      result =
-        Config.switch_config_location(
-          path: "/non/existent/path",
-          file: "config.json"
-        )
+    # AT-01.6 (ST0002 acceptance.md), ruling R4. Replaces a test that asserted
+    # AF-06: a switch to a nonexistent path used to succeed with an empty config
+    # (enoent read as "empty"), and the comments narrated the drift.
+    test "switch to nonexistent path errors and preserves location", %{
+      location1_dir: location1_dir,
+      app_specific_path_var: app_specific_path_var,
+      app_specific_file_var: app_specific_file_var
+    } do
+      assert {:error, reason} =
+               Config.switch_config_location(
+                 path: "/non/existent/path",
+                 file: "config.json"
+               )
 
-      # Should return error and maintain current config
-      # Actually succeeds with empty config
-      assert {:ok, _} = result
+      assert reason =~ "enoent"
 
-      # Or check that it handles gracefully
-      assert {:error, _} = Config.get("location")
+      # The previous location stays live: config, cache and env vars all intact.
+      assert {:ok, "one"} = Config.get("location")
+      assert {:ok, "App1"} = Config.get("app.name")
+      assert System.get_env(app_specific_path_var) == location1_dir
+      assert System.get_env(app_specific_file_var) == "config.json"
     end
 
     test "multiple switches work correctly", %{
@@ -299,12 +311,26 @@ defmodule Arca.Config.SwitchLocationTest do
     end
 
     test "can clear config location with nil values", %{
+      location3_dir: location3_dir,
       app_specific_path_var: app_specific_path_var,
       app_specific_file_var: app_specific_file_var
     } do
       # Store current values
       current_path = System.get_env(app_specific_path_var)
       current_file = System.get_env(app_specific_file_var)
+      original_generic_path = System.get_env("ARCA_CONFIG_PATH")
+      original_generic_file = System.get_env("ARCA_CONFIG_FILE")
+
+      # Clearing the app-specific pair falls through to the generic pair, so
+      # point that at a location which actually holds a config file: under
+      # ruling R4 a switch to a location with no config file now fails.
+      System.put_env("ARCA_CONFIG_PATH", location3_dir)
+      System.put_env("ARCA_CONFIG_FILE", "app.json")
+
+      on_exit(fn ->
+        Arca.Config.Test.Support.restore_env("ARCA_CONFIG_PATH", original_generic_path)
+        Arca.Config.Test.Support.restore_env("ARCA_CONFIG_FILE", original_generic_file)
+      end)
 
       # Clear with nil
       {:ok, previous} =
@@ -316,6 +342,9 @@ defmodule Arca.Config.SwitchLocationTest do
       # Environment variables should be cleared
       assert System.get_env(app_specific_path_var) == nil
       assert System.get_env(app_specific_file_var) == nil
+
+      # ... and resolution fell through to the generic pair
+      assert {:ok, "three"} = Config.get("location")
 
       # Restore
       Config.switch_config_location(previous)
