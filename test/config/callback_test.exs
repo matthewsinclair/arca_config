@@ -173,7 +173,7 @@ defmodule Arca.Config.CallbackTest do
       test_pid = self()
       callback_fn = fn -> send(test_pid, :config_changed) end
 
-      {:ok, ref} = Config.add_callback(callback_fn)
+      {:ok, _ref} = Config.add_callback(callback_fn)
 
       # Update configuration
       Config.put("test_key", "test_value")
@@ -189,7 +189,7 @@ defmodule Arca.Config.CallbackTest do
       # Add a value to be deleted
       Config.put("temp_key", "temp_value")
 
-      {:ok, ref} = Config.add_callback(callback_fn)
+      {:ok, _ref} = Config.add_callback(callback_fn)
 
       # Delete the value
       Server.delete("temp_key")
@@ -202,7 +202,7 @@ defmodule Arca.Config.CallbackTest do
       test_pid = self()
       callback_fn = fn -> send(test_pid, :config_changed) end
 
-      {:ok, ref} = Config.add_callback(callback_fn)
+      {:ok, _ref} = Config.add_callback(callback_fn)
 
       # Reload configuration
       Config.reload()

@@ -170,7 +170,7 @@ defmodule Arca.Config.FileWatcher do
     updated_path = Arca.Config.Cfg.config_file() |> Path.expand()
     current_info = get_file_info(updated_path)
 
-    report_lost_file(current_info, last_info, updated_path)
+    report_lost_file(current_info, last_info, updated_path, state.config_file)
     reload_if_changed(current_info, last_info)
 
     {:noreply,
@@ -253,9 +253,18 @@ defmodule Arca.Config.FileWatcher do
   # Losing sight of the file is an event. Regaining it is handled already: the
   # next successful stat differs from `nil`, so `file_changed?/2` reports a
   # change and the reload runs.
-  defp report_lost_file(nil, nil, _path), do: :ok
+  #
+  # The path is re-resolved every tick, so it can differ from the one looked at
+  # last time -- an environment change moved it. That is a location change, not
+  # a lost file: `last_info` describes a different file entirely, and warning
+  # about it reports the absence of a file nobody said was there.
+  defp report_lost_file(_current_info, _last_info, path, previous_path)
+       when path != previous_path,
+       do: :ok
 
-  defp report_lost_file(nil, _last_info, path) do
+  defp report_lost_file(nil, nil, _path, _previous_path), do: :ok
+
+  defp report_lost_file(nil, _last_info, path, _previous_path) do
     require Logger
 
     Logger.warning(
@@ -264,7 +273,7 @@ defmodule Arca.Config.FileWatcher do
     )
   end
 
-  defp report_lost_file(_current_info, _last_info, _path), do: :ok
+  defp report_lost_file(_current_info, _last_info, _path, _previous_path), do: :ok
 
   defp file_changed?(nil, _), do: false
   defp file_changed?(_, nil), do: true

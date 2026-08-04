@@ -74,12 +74,18 @@ jobs:
       # application settings changed. ARCA_CONFIG_CONFIG_PATH used to be set
       # here to `.arca_config`, inside the checkout, which is how test writes
       # ended up in the repository.
+      # --warnings-as-errors covers the TEST files. `mix compile` above only
+      # compiles lib/, so warnings in test/ went unreported until they were
+      # read off a terminal by eye.
       - name: Run tests
-        run: mix test
+        run: mix test --warnings-as-errors
 
       - name: Check code formatting
         run: mix format --check-formatted
 
+      # No `|| true`. The workflow this replaced swallowed the exit status, so
+      # a coverage threshold that had never been met also never failed a build.
+      # Threshold and the test-support exclusion are in mix.exs.
       - name: Run tests with coverage
         if: matrix.elixir == '1.20.2'
         run: mix test --cover

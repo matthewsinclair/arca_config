@@ -221,6 +221,33 @@ defmodule Arca.Config.FileWatcherTest do
     assert %{watching: true} = :sys.get_state(FileWatcher)
   end
 
+  # The path is re-resolved every tick, so a test restoring its environment
+  # variables moves it. That is a location change, not a disappearance, and it
+  # used to log a warning about a file nobody had said was there -- which is how
+  # this leaked into the suite's output from the suite's OWN config location.
+  test "a resolved path that moves is not reported as a lost file", %{test_file: test_file} do
+    FileWatcher.start_watching(test_file)
+    :sys.get_state(FileWatcher)
+
+    elsewhere = Path.join(System.tmp_dir(), "arca_watcher_moved_#{:rand.uniform(10_000)}")
+    File.mkdir_p!(elsewhere)
+    on_exit(fn -> File.rm_rf!(elsewhere) end)
+
+    app_name = Arca.Config.Cfg.config_domain() |> to_string()
+    path_var = "#{String.upcase(app_name)}_CONFIG_PATH"
+    previous = System.get_env(path_var)
+    System.put_env(path_var, elsewhere)
+    on_exit(fn -> Arca.Config.Test.Support.restore_env(path_var, previous) end)
+
+    log =
+      capture_log(fn ->
+        send(FileWatcher, :check_file)
+        :sys.get_state(FileWatcher)
+      end)
+
+    refute log =~ "can no longer be read"
+  end
+
   test "the watcher recovers when the file comes back", %{test_file: test_file} do
     test_pid = self()
     {:ok, ref} = Arca.Config.add_callback(fn -> send(test_pid, :config_changed) end)

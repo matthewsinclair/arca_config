@@ -4,6 +4,7 @@ defmodule Arca.Config.CLITest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
+  import ExUnit.CaptureLog
 
   alias Arca.Config.CLI
   alias Arca.Config.Test.Support
@@ -107,8 +108,16 @@ defmodule Arca.Config.CLITest do
     File.chmod!(test_file, 0o444)
     on_exit(fn -> File.chmod(test_file, 0o644) end)
 
-    assert capture_io(fn -> CLI.main(["set", "app.name", "never-lands"]) end) =~
-             "Error: failed to write configuration: eacces"
+    # The write failure this provokes is logged by production code at error
+    # level. Captured and asserted rather than printed, so the suite stays dots
+    # only and the log line becomes a pinned contract instead of noise.
+    log =
+      capture_log(fn ->
+        assert capture_io(fn -> CLI.main(["set", "app.name", "never-lands"]) end) =~
+                 "Error: failed to write configuration: eacces"
+      end)
+
+    assert log =~ "Failed to write config file"
   end
 
   test "list reports a load failure instead of raising on the reason", %{test_file: test_file} do

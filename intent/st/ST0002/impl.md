@@ -177,6 +177,20 @@ Two more were caused by this thread's own changes: the `receive … after 0` dra
 
 **What the pass did not cover, in its own words:** it executed nothing -- no compile, no suite, no credo, no dialyzer -- so it read the code and could not tell whether anything passed. It did not read the README, CI workflow, `config/*.exs` or the CHANGELOG, and every `arca_cli` line citation in the consumer contract test is unverified from its side.
 
+### CI green, and three things it caught that local runs did not -- 2026-08-04
+
+The first CI run after publishing failed, and everything it found was mine. Suite **222 passed (48 doctests, 174 tests)** across eight seeds after the work; coverage **90.47%**.
+
+**The coverage gate had never been enforced.** All three matrix cells passed `mix test`; only `mix test --cover` failed, at 84.56% against a 90% threshold. That threshold is Elixir's default and nobody had ever chosen it -- the old `test.yml` ran `mix test --cover || true`, so it could never fail a build. Removing that `|| true` during AC-05.4's consolidation was right (it is the swallow-the-failure pattern this entire thread exists to remove) and it surfaced a failure that had been hidden for the life of the workflow.
+
+**The fix was not to lower the bar.** Excluding test-support modules -- compiled in by `elixirc_paths(:test)`, not shipped, and saying nothing about the library -- moved it to 88.54%. The remaining gap was real: **`Mix.Tasks.Arca.Config` measured 0%**. Ruling R3 chose extract over delete *because* the mix task is the documented CLI path, and nothing tested it. `InitHelper`, the module a consumer calls to create its configuration in the first place, was at 58%. `test/config/entry_points_test.exs` covers both, plus `Error.message/1`'s total-by-construction clause and `Value.from_string/1`'s edges. That took it to 90.45% honestly, so the threshold stays at 90 -- now written down in `mix.exs` as a chosen number rather than an inherited default.
+
+**Warnings in test files were never checked.** Three unused-variable warnings shipped, from an over-broad find-and-replace of mine in `callback_test.exs`. `mix compile --warnings-as-errors` only compiles `lib/`, so nothing caught them -- the gate I had been running all thread could not see test code. CI now runs `mix test --warnings-as-errors`.
+
+**Suite output is dots only, structurally, rather than by habit.** Two rounds of stray `[error]`/`[warning]` lines leaked past me: first from two tests that provoke real write failures, then from the new watcher warning firing on the suite's own config location. `ExUnit.start(capture_log: true)` in `test_helper.exs` holds log output per test and prints it only when that test fails, which is the one moment it helps. Chasing leaks one at a time did not hold; any test that provokes a genuine failure in production code emits one.
+
+**The watcher warning was also wrong, not just noisy.** `report_lost_file/4` fired whenever a stat failed, but the watcher re-resolves the path every tick, so a test restoring its environment variables moved it -- and comparing the new path's (absent) stat against the old path's `last_info` reported a file "no longer readable" that nobody had said was there. It now reports only when the path is the one it looked at last time. A location change is not a disappearance.
+
 ## Changed-tests ledger
 
 Every test changed because it asserted a defect gets a row here (AC-00.3). Flag each to vc.

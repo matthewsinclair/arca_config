@@ -9,6 +9,20 @@ defmodule ArcaConfig.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      test_coverage: [
+        # Stated rather than inherited. 90 is also Elixir's default, and that is
+        # the whole story of how this went unnoticed: the old CI ran
+        # `mix test --cover || true`, so the threshold was never enforced and
+        # nobody ever chose a number.
+        threshold: 90,
+        # Test support is compiled into the app by `elixirc_paths(:test)` but is
+        # not shipped, so measuring it says nothing about the library. It was
+        # dragging the total down by roughly four points on its own.
+        ignore_modules: [
+          Arca.Config.Test.Support,
+          Arca.Config.Test.Isolation
+        ]
+      ],
       mix_tasks: [
         arca_cli: Mix.Tasks.Arca.Config,
         comment: "🛠️ Arca Config"

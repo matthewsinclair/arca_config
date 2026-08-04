@@ -54,4 +54,13 @@ ExUnit.after_suite(fn _results ->
   end
 end)
 
-ExUnit.start()
+# `capture_log: true` makes hv's standing rule structural rather than a habit:
+# suite output is dots only. Production logging that a test provokes is held per
+# test and printed only when that test FAILS, which is the one moment it helps.
+#
+# Chasing individual leaks did not hold. Two rounds of "capture that one" both
+# ended with another line appearing from somewhere else, because any test that
+# provokes a real failure in production code emits one and nothing enforced it.
+# Tests that assert ON a log still wrap it in `ExUnit.CaptureLog.capture_log/1`;
+# the two compose.
+ExUnit.start(capture_log: true)

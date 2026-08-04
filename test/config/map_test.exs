@@ -3,6 +3,8 @@ defmodule Arca.Config.MapTest do
   # configuration server and its single on-disk file.
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Arca.Config.Map, as: ConfigMap
   alias Arca.Config.Server
 
@@ -122,11 +124,17 @@ defmodule Arca.Config.MapTest do
       File.chmod!(test_file, 0o444)
       on_exit(fn -> File.chmod(test_file, 0o644) end)
 
-      assert_raise RuntimeError,
-                   ~r/Failed to put config: failed to write configuration: eacces/,
-                   fn ->
-                     ConfigMap.put(ConfigMap.new(), "app.name", "never-lands")
-                   end
+      # Captured, not printed: the production write failure logs at error level.
+      log =
+        capture_log(fn ->
+          assert_raise RuntimeError,
+                       ~r/Failed to put config: failed to write configuration: eacces/,
+                       fn ->
+                         ConfigMap.put(ConfigMap.new(), "app.name", "never-lands")
+                       end
+        end)
+
+      assert log =~ "Failed to write config file"
     end
   end
 
