@@ -3,7 +3,7 @@ verblock: "04 Aug 2026:v0.1: matts - Initial version"
 wp_id: WP-03
 title: "Notification and watcher coherence"
 scope: Small
-status: Not Started
+status: Done
 ---
 
 # WP-03: Notification and watcher coherence

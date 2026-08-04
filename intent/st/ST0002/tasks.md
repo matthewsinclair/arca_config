@@ -17,7 +17,8 @@
 - [ ] vc: concur on the R1 error shape before WP-02 lands (handover-to-vc.md, Ask 1)
 - [x] WP-01 Truthful returns (AR-1) -- landed 2026-08-04, gate PASS 6/6; suite 134 green (was 128), deterministic across 8 seeds
 - [ ] WP-02 One lookup path, one dialect, complete facade (AR-2)
-- [ ] WP-03 Notification and watcher coherence (AR-3)
+- [x] WP-03 Notification and watcher coherence (AR-3) -- landed 2026-08-04, gate PASS 6/6; suite 147 green, 8 seeds
+- [ ] hv: ratify (or overrule) the notification matrix in design.md -- AC-03.1 says "ratified"; it is implemented and pinned by test, not blessed
 - [ ] WP-04 Location model (AR-4)
 - [ ] WP-05 Surface and dependency pruning (AR-5)
 - [ ] WP-06 Downstream verification and release (vc + hv)

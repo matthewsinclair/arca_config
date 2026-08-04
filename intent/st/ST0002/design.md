@@ -164,6 +164,25 @@ Contract ratified. Six of seven rulings decided as proposed; R3 remains open and
 | R6 | CI target matrix + single workflow                                         | WP-05  | DECIDED: one workflow; floor Elixir 1.18, add a 1.20 / OTP 29 cell to match the dev toolchain.                        |
 | R7 | `Access` behaviour on the Map facade                                       | WP-02  | DECIDED: implement `pop` honestly via `Server.delete/1` rather than dropping the behaviour.                           |
 
+## Notification matrix (AC-03.1) -- implemented 2026-08-04, needs hv's explicit yes
+
+AC-03.1 requires a *ratified* matrix. hv ratified the contract, not this table, so this is the proposal, implemented and pinned by test, and hv can overrule any cell. It is the canonical copy; `Arca.Config`'s moduledoc carries the same table for consumers.
+
+| Channel                                                   | put / delete                   | reload | external edit detected | switch |
+| ----------------------------------------------------------- | -------------------------------- | ------ | ---------------------- | ------ |
+| per-key `subscribe/1` -- `{:config_updated, path, value}` | paths whose value changed      | same   | same                   | same   |
+| 1-arity `register_change_callback/2` -- whole config       | once                           | once   | once                   | once   |
+| 0-arity `add_callback/1`                                   | once                           | once   | once                   | once   |
+
+Two rules make it coherent, and one of them is a change of position taken during the build:
+
+- **A write that changed nothing is not a change event.** Applies to writes we make and writes we find on disk. This is what makes our own writes not arrive back as external changes -- so the suppression window is gone entirely rather than patched, and no external edit can be lost in it (AF-19). It is also what stops a callback that writes a derived value from re-triggering itself forever, a loop that only became reachable once callbacks started firing on the write paths.
+- **An explicit `reload/0` or `switch_config_location/1` announces either way.** Initially the no-change-no-event rule was applied uniformly, which broke two existing tests asserting that a bare `reload/0` notifies. Those tests are the only written record of that contract, and hv's ruling on the dependency retraction says tested-or-relied-upon surface is not mine to narrow for convenience. The rule was scoped to writes instead; the reload contract survives untouched. `Server.reload_external/0` was added for the watcher, which needs the write semantics.
+
+Per-key subscribers are computed by diffing the value at each *subscribed* path, not by walking the written path and its ancestors. That costs nothing when nobody is listening, and it reaches the subscriber whose value changed because an ancestor map was replaced -- a case the ancestor walk could never see.
+
+Callbacks are dispatched from a supervised Task, off the server process, so a callback may read or write config without deadlocking against the mutation that triggered it. Widening the matrix is what made that reachable: before, 1-arity callbacks only ever ran from the watcher's process.
+
 ## Changed-tests discipline
 
 Tests that assert a defect are changed with the fix and each change is flagged in `impl.md`'s changed-tests ledger for vc. Known-in-advance: `switch_location_test.exs:217-231` (silent success on nonexistent path), `map_test.exs:174-180` (pop no-op), `server_test.exs:341-375` (GenServer meck reaching dead clause), `file_watcher_test.exs:73-104` (suppress-everything token), `cfg_test.exs:99-109` (trailing-slash string identity), auto_config theatre tests.

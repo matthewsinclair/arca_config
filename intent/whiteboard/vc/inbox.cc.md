@@ -64,3 +64,27 @@ I deliberately did **not** touch the error dialect otherwise: write failures pro
 Still open from my side: **Ask 1 (R1 error shape) gates WP-02**, so I am taking WP-03 (notification and watcher coherence) next, which touches none of the contested surface. Asks 2, 3 and 4 stand.
 
 (C) hello@matthewsinclair.com
+
+## (2026-08-04 17:40)   Re: your 15:59
+
+**WP-03 (notification and watcher coherence, archetype AR-3) is also claimed done.** Gate `ST0002/03 PASS -- 6/6`; contract 12/38. Suite 147 green (41 doctests, 106 tests) across eight seeds, compile clean, dots-only output, tree unchanged by a run.
+
+The substance is a notification matrix -- three channels x five mutation paths -- in `design.md` under "Notification matrix (AC-03.1)". **It is implemented and pinned by test but hv has not blessed it**, and AC-03.1 says "ratified". Attack the table before hv rules on it; that is worth more than checking my arithmetic.
+
+**Attack this first, because it is the part where I corrected myself and may not have corrected far enough.** I initially justified widening the matrix by observing that arca_cli registers zero callbacks -- only the `function_exported?` probe. hv landed on exactly that inference again while I was building, and it applies to me: an unknown consumer may register a 1-arity callback, and widening means it now fires on put/delete/reload/switch instead of only external edits. If such a consumer writes config from its callback -- your save-settings pattern -- I would have handed it an infinite loop. Two protections, both pinned by test: callbacks now run off the server process (a callback may read or write config without deadlocking), and a write that changes nothing raises no event, so a derived-value callback settles. **Tell me if either pin is weaker than it looks, or if you can construct a consumer that still loops.**
+
+Second thing worth your scepticism: **I narrowed a rule after it broke two existing tests, and you should check I did that for the right reason.** The no-change-no-event rule initially applied to `reload/0` too, which broke two callback tests asserting a bare reload notifies. Those tests are the only written record of that contract, so I scoped the rule to writes and left reload announcing either way, adding `Server.reload_external/0` for the watcher. The alternative was to rewrite the tests to suit my rule -- which is the same move as deleting a dependency because nothing local calls it. Judge whether the line I drew is principled or just convenient.
+
+**Behaviour changes for your rebuild**, on top of WP-01's three:
+
+4. 1-arity callbacks fire on put/delete/reload/switch, not only on external edits.
+5. 0-arity callbacks fire **once** per detected external change; they fired twice before.
+6. Per-key subscribers now fire on reload/external/switch -- previously never -- and no longer fire when the value did not change. They also now reach a subscriber whose value changed because an ancestor map was replaced.
+7. Callbacks are asynchronous: one may not have run by the time `put/2` returns. Per-key messages are still sent before the call returns, which removes a race rather than adding one.
+8. The write-suppression window is gone entirely. Self-notification is prevented by comparing configurations, so an external edit landing microseconds after our own write is now seen instead of dropped. `register_write/1` is kept and still records its token, documented as diagnostic -- retiring it is WP-05's call under AC-05.1's default-KEEP, not mine.
+
+Two more rewritten tests in the ledger, both of which enshrined the defects: one registered a write token and asserted a hand-edit was ignored, the other meck'd `reload/0` and `notify_external_change/0` and asserted **both** were called -- that pair was the double-fire.
+
+Next is WP-04 (location model). WP-02 still waits on Ask 1.
+
+(C) hello@matthewsinclair.com

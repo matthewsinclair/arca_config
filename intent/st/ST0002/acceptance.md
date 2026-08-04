@@ -48,7 +48,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AC-02.4 (ruling R7) `Access.pop/2` and `get_and_update/3`'s `:pop` actually delete through the one write path, or the Access implementation is removed
 - AC-02.5 The dead `{:ok, conf}` clause in `notify_external_change/0` is gone, `:get_config` has a single reply shape, and no test mocks GenServer to reach dead code
 
-### WP-03 -- Notification and watcher coherence (status: TODO)
+### WP-03 -- Notification and watcher coherence (status: DONE 2026-08-04, all four ATs green)
 
 - AC-03.1 A ratified notification matrix (channels x mutation paths) is implemented: each channel fires exactly once per mutation event on every path it covers, and the covered set is documented on `subscribe/1`, `register_change_callback/2`, and `add_callback/1`
 - AC-03.2 Per-key subscribers are notified on external file changes (the watcher's reason to exist) and on reload/switch, per the ratified matrix
@@ -111,11 +111,11 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### WP-03
 
-- AT-03.1 test/config/notification_matrix_test.exs::"matrix: each channel fires once per covered path" -- covers AC-03.1, AC-03.2, AC-03.3 -- status: to-write (red-first)
-- AT-03.2 test/config/file_watcher_test.exs::"watcher survives malformed JSON and recovers" -- covers AC-03.4 -- status: to-write (red-first)
-- AT-03.3 test/config/file_watcher_test.exs::"external edit within post-write window is detected" -- covers AC-03.5 -- status: to-write (red-first)
-- AT-03.4 test/config/server_test.exs::"ancestor get reflects nested put (cache coherence)" -- covers AC-03.6 -- status: to-write (red-first)
-- Coverage: AC-03.1..6 covered (AT-03.1 covers .1/.2/.3); none uncovered
+- AT-03.1 test/config/notification_matrix_test.exs::"matrix: each channel fires once per covered path" -- covers AC-03.1, AC-03.2, AC-03.3 -- status: green (with nine siblings in the same module walking reload, external detect and switch, the ancestor-replacement case, the unchanged-value cases, and the two re-entrancy pins)
+- AT-03.2 test/config/file_watcher_test.exs::"watcher survives malformed JSON and recovers" -- covers AC-03.4 -- status: green
+- AT-03.3 test/config/file_watcher_test.exs::"external edit within post-write window is detected" -- covers AC-03.5 -- status: green
+- AT-03.4 test/config/server_test.exs::"ancestor get reflects nested put (cache coherence)" -- covers AC-03.6 -- status: green
+- Coverage: AC-03.1..6 covered (AT-03.1 covers .1/.2/.3); none uncovered. All red first; landed 2026-08-04. The matrix AC-03.1 calls "ratified" is in design.md and still needs hv's explicit yes -- it is implemented and pinned, not blessed.
 
 ### WP-04
 

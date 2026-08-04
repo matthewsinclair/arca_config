@@ -7,7 +7,7 @@ generator: intent todo
 - [-] ST0002: Fable review of arca_config base code
   - [x] 01: Truthful returns: persistence failures surface
   - [ ] 02: One lookup path, one dialect, complete facade
-  - [ ] 03: Notification and watcher coherence
+  - [x] 03: Notification and watcher coherence
   - [ ] 04: Location model: precedence, domain, isolation
   - [ ] 05: Surface and dependency pruning
   - [ ] 06: Downstream verification and release

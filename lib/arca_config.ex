@@ -5,6 +5,37 @@ defmodule Arca.Config do
   It allows reading from and writing to a JSON configuration file, with support for
   nested properties using dot notation.
 
+  ## Change notifications
+
+  Three channels report configuration changes, and each fires exactly once per
+  change event on every path below. This table is the contract; the individual
+  functions refer back to it rather than restating it.
+
+  | Channel                                             | put / delete             | reload            | external edit detected   | location switch   |
+  | ----------------------------------------------------- | -------------------------- | ------------------- | -------------------------- | ------------------- |
+  | `subscribe/1` -- `{:config_updated, path, value}`    | when that path's value changed | same            | same                     | same              |
+  | `register_change_callback/2` -- whole config map     | once                     | once              | once                     | once              |
+  | `add_callback/1` -- no arguments                     | once                     | once              | once                     | once              |
+
+  Two rules make this coherent:
+
+  - **A write that changes nothing is not a change event.** This applies to
+    writes the application makes and to writes it finds on disk, which is why
+    the application's own writes never arrive back as external changes -- there
+    is no suppression window for a genuine external edit to be lost in. It is
+    also why a callback that writes a derived value settles instead of
+    re-triggering itself forever.
+  - **An explicit `reload/0` or `switch_config_location/1` announces either
+    way**, even when the values come back identical, because the caller asked
+    for it and may be holding derived state to refresh. Per-key subscribers are
+    still told only about paths whose value actually changed.
+
+  Callbacks run outside the configuration server's own process, so a callback
+  may read or write configuration without deadlocking against the change that
+  triggered it. They are therefore asynchronous: a callback may not have run by
+  the time `put/2` returns. Per-key subscriber messages are sent before the
+  call returns.
+
   ## OTP Start Phase Integration
 
   **IMPORTANT**: Starting from this version, Arca.Config uses OTP start phases for
@@ -296,6 +327,12 @@ defmodule Arca.Config do
   When the value at this key changes, a message of the format
   `{:config_updated, key_path, new_value}` will be sent to the caller.
 
+  Delivered on every path that changes the value at this key: `put/2`,
+  `delete/1`, `reload/0`, an externally detected edit, and a location switch --
+  including when the value changed because an ancestor was replaced. A path
+  whose value did not change is not reported. See "Change notifications" in the
+  module documentation for the full matrix.
+
   ## Parameters
     - `key`: A string with dot notation, atom, or list of keys
 
@@ -334,10 +371,16 @@ defmodule Arca.Config do
   def unsubscribe(key), do: Server.unsubscribe(key)
 
   @doc """
-  Registers a callback function to be called when the configuration changes externally.
+  Registers a callback function to be called when the configuration changes.
 
-  This function is useful for reacting to configuration changes that happen outside
-  the application, such as when the configuration file is edited directly.
+  The callback receives the whole configuration map and fires once per change
+  event on every path -- `put/2`, `delete/1`, `reload/0`, an externally detected
+  edit, and a location switch -- not only on external edits. See "Change
+  notifications" in the module documentation for the full matrix.
+
+  The callback runs outside the configuration server's process, so it may read
+  or write configuration itself. A callback that writes a derived value settles,
+  because a write that changes nothing raises no further event.
 
   ## Parameters
     - `callback_id`: A unique identifier for the callback (used for unregistering)
@@ -376,6 +419,11 @@ defmodule Arca.Config do
   @doc """
   Adds a callback function to be called whenever the configuration changes.
   This callback does not receive any arguments, unlike `register_change_callback/2`.
+
+  Fires once per change event on every path: `put/2`, `delete/1`, `reload/0`, an
+  externally detected edit, and a location switch. It previously fired twice for
+  a single externally detected change. See "Change notifications" in the module
+  documentation for the full matrix.
 
   ## Parameters
     - `callback_fn`: A 0-arity function to execute when config changes

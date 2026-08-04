@@ -24,11 +24,15 @@ defmodule Arca.Config.FileWatcher do
   end
 
   @doc """
-  Registers a write operation to avoid self-notification.
+  Registers a write operation.
 
-  When the application writes to the config file, it should register
-  the write with a unique token so the file watcher can ignore those
-  changes and avoid notification loops.
+  Self-notification is prevented by comparing configurations rather than by
+  suppressing changes in a time window: a change the application made produces a
+  configuration identical to the one already in memory, so no change event is
+  raised for it. The token is recorded in the watcher's state and is retained
+  for compatibility and diagnostics; it no longer gates whether a detected
+  change is acted on, because doing so lost external edits that landed inside
+  the window.
 
   ## Parameters
     - `token`: A unique token identifying the write operation
@@ -163,56 +167,66 @@ defmodule Arca.Config.FileWatcher do
      %{config_file: nil, last_info: nil, write_token: nil, watching: false, check_timer: nil}}
   end
 
+  # Dormant: do not reschedule. A check already in the mailbox when watching
+  # stopped used to re-arm the timer and quietly resurrect a stopped watcher;
+  # start_watching/1 is the only thing that starts the cycle.
   @impl true
-  def handle_info(
-        :check_file,
-        %{config_file: _path, last_info: last_info, write_token: token, watching: watching} =
-          state
-      ) do
-    # Only check for file changes if we are watching
-    if watching do
-      # Always refresh the config path in case it changed due to environment changes
-      updated_path = Arca.Config.Cfg.config_file() |> Path.expand()
+  def handle_info(:check_file, %{watching: false} = state) do
+    {:noreply, %{state | check_timer: nil}}
+  end
 
-      # Only check for file changes if the file exists
-      current_info = if File.exists?(updated_path), do: get_file_info(updated_path), else: nil
+  @impl true
+  def handle_info(:check_file, %{last_info: last_info} = state) do
+    # Always refresh the config path in case it changed due to environment changes
+    updated_path = Arca.Config.Cfg.config_file() |> Path.expand()
+    current_info = get_file_info(updated_path)
 
-      if File.exists?(updated_path) do
-        # Check if file has been modified (and not by us)
-        if file_changed?(current_info, last_info) do
-          if token == nil do
-            # External change - reload config and notify
-            {:ok, _config} = Arca.Config.Server.reload()
-            Arca.Config.Server.notify_external_change()
-          end
-        end
+    reload_if_changed(current_info, last_info)
 
-        # Update state with latest file info and path, and clear any registered token
-        # Schedule next check and store timer
-        timer = schedule_check()
-
-        new_state = %{
-          state
-          | last_info: current_info,
-            config_file: updated_path,
-            write_token: nil,
-            check_timer: timer
-        }
-
-        {:noreply, new_state}
-      else
-        # File doesn't exist - just schedule the next check
-        timer = schedule_check()
-        {:noreply, %{state | check_timer: timer}}
-      end
-    else
-      # Not watching yet - just schedule the next check
-      timer = schedule_check()
-      {:noreply, %{state | check_timer: timer}}
-    end
+    {:noreply,
+     %{
+       state
+       | last_info: current_info,
+         config_file: updated_path,
+         write_token: nil,
+         check_timer: schedule_check()
+     }}
   end
 
   # Private functions
+
+  # Every detected change is reloaded; whether anyone hears about it is decided
+  # by whether the config actually differs from what is already in memory. That
+  # is what makes our own writes self-evidently not external changes, and it is
+  # why there is no longer a suppression window for an external edit to be lost
+  # in: the old code dropped any change while a write token was set, and
+  # advanced past it so it was never seen again.
+  defp reload_if_changed(current_info, last_info) do
+    case file_changed?(current_info, last_info) do
+      true -> reload_tolerantly()
+      false -> :ok
+    end
+  end
+
+  # A config file can be edited into an unparseable state by hand at any moment.
+  # Hard-matching a successful reload here meant one bad edit raised a
+  # MatchError and the watcher restarted into permanent, silent dormancy.
+  defp reload_tolerantly do
+    require Logger
+
+    case Arca.Config.Server.reload_external() do
+      {:ok, _config} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "Config file changed but could not be loaded: #{inspect(reason)}. " <>
+            "Keeping the last good configuration and continuing to watch."
+        )
+
+        :ok
+    end
+  end
 
   defp schedule_check do
     Process.send_after(self(), :check_file, @check_interval)

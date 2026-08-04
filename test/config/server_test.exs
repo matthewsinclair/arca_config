@@ -322,6 +322,19 @@ defmodule Arca.Config.ServerTest do
     end
   end
 
+  # AT-03.4 (ST0002 acceptance.md). AF-20 / probe P2: a nested put cached only
+  # the leaf, so an ancestor read was served the pre-put map from cache while
+  # disk already held the new value.
+  describe "cache coherence (AR-3)" do
+    test "ancestor get reflects nested put (cache coherence)" do
+      assert {:ok, %{"host" => "localhost", "port" => 5432}} = Server.get("database")
+
+      assert {:ok, "new-host"} = Server.put("database.host", "new-host")
+
+      assert {:ok, %{"host" => "new-host", "port" => 5432}} = Server.get("database")
+    end
+  end
+
   # AT-01.1, AT-01.2 (ST0002 acceptance.md). Reproduces probe P3b: the config
   # file stays readable but unwritable, so the load succeeds and only the
   # persist fails -- the exact shape of AF-01/AF-02.

@@ -28,6 +28,26 @@ Breaking changes for the WP-06 migration notes: `put/2`, `delete/1`, `put!/2`, `
 
 Deferred, deliberately: the write token is registered before the write and stays registered when the write fails (a failed write can suppress a real external change for one window) -- that is AC-03.5's territory, WP-03. `flatten_and_cache/2` still discards per-key `Cache.put` results, now guarded by `rebuild_cache/1`'s single availability check; WP-03 rewrites it for AC-03.6.
 
+### WP-03 Notification and watcher coherence (AR-3) -- landed 2026-08-04
+
+Twelve ATs red first (ten in a new `notification_matrix_test.exs`, plus the two watcher ones), each failing for its ledger defect -- including the watcher's `MatchError` on a hand-broken file and the stale ancestor map from probe P2. After: **147 passed (41 doctests, 106 tests)**, deterministic across eight seeds, compile clean, dots-only output, tree unchanged by a run.
+
+The matrix is in design.md and is the substance of this WP; it still needs hv's explicit yes. As-built by finding:
+
+- **AF-17** one notification path for all five mutation events, replacing three divergent ones. Per-key subscribers are computed by diffing the value at each *subscribed* path rather than walking the written path's ancestors -- cheaper when nobody listens, and it reaches the subscriber whose value changed because an ancestor was replaced, which the ancestor walk could not see. 1-arity callbacks now fire on every path, not only external. The 0-arity double-fire is gone: the watcher no longer calls `reload` **and** `notify_external_change`; the reload is the event.
+- **AF-18** the watcher's `{:ok, _} = Server.reload()` is now a `case` that logs a parse failure, keeps the last good config, and keeps watching. One malformed hand-edit used to raise a MatchError and restart it into permanent silent dormancy with no timer.
+- **AF-19** the suppression window is gone, not patched. Self-notification is prevented by comparing configurations: a write we made produces a config identical to the one in memory, so it raises no event. Nothing is suppressed, so nothing can be lost in the window. `register_write/1` is kept and still records the token, now documented as diagnostic; whether it survives is WP-05's call under AC-05.1's default-KEEP.
+- **AF-20** a successful put/delete rebuilds the cache from the new config instead of writing the leaf and leaving every ancestor stale. A full clear-and-rebuild per write is O(config) where the old code was O(1), which is the right trade next to a file write, and it makes the whole class of staleness unreachable rather than fixing the one path probe P2 found.
+- **AF-21** subscriber messages are sent before the call returns instead of being deferred behind the reply, so put-then-expect-message no longer races. Callbacks stay asynchronous by design (below), which is documented.
+- **AF-22** a `:check_file` already in the mailbox when watching stopped no longer re-arms the timer: the dormant clause does not reschedule, so a stopped watcher stays stopped.
+
+Decisions taken while building:
+
+- **Callbacks run off the server process**, via a supervised Task added to the tree. Widening the matrix is what made this necessary: 1-arity callbacks previously only ever ran from the watcher's process, and firing them inside `handle_call({:put,…})` would deadlock any callback that reads or writes config. Two tests pin that surface -- a callback that reads back, and a callback that writes a derived value.
+- **The no-change-no-event rule was scoped, not applied uniformly.** It first broke two tests asserting that a bare `reload/0` notifies. Those tests are the only written record of that contract, so the rule was narrowed to writes and the reload contract kept. `Server.reload_external/0` was added for the watcher. See the design.md matrix.
+
+Breaking changes for WP-06's migration notes: 1-arity callbacks now fire on put/delete/reload/switch, not only on external edits; 0-arity callbacks fire once rather than twice per detected external change; per-key subscribers now fire on reload/external/switch and no longer fire when the value did not change; callbacks are asynchronous, so a callback may not have run when `put/2` returns.
+
 ## Changed-tests ledger
 
 Every test changed because it asserted a defect gets a row here (AC-00.3). Flag each to vc.
@@ -42,7 +62,10 @@ Every test changed because it asserted a defect gets a row here (AC-00.3). Flag 
 | `cfg.ex` `load/1` doctest                                                | Hygiene, exposed by R4: it deleted `System.tmp_dir!()/config_test.json` -- the shared fixture the module's ambient location points at -- and deleted env vars it did not set | Rewritten to use `load/1`'s explicit-path form on its own file: touches no env var, creates and removes exactly one file        | WP-01 |
 | `cfg_test.exs` module setup                                              | Hygiene, exposed by R4: `setup_all` established the config location once, and several doctests then deleted the env var, leaving the rest of the module pointed at nothing | `setup_all` -> `setup` so the location is re-asserted per test. Also captures and restores the tracked repo-tree `.arca_config/config.json` instead of removing it | WP-01 |
 
-Two of those rows are hygiene rather than defect-assertions, and both were invisible before ruling R4: while a load from a nonexistent location reported success with an empty config, a test that destroyed the location it depended on still passed. The suite was green over the top of them. The wider isolation sweep is AC-04.5 (WP-04); these are only what WP-01's change made visible.
+| `file_watcher_test.exs` "register_write prevents notification loops"     | AF-19. Registered a write token, then wrote *different* content by hand and asserted silence -- enshrining the suppress-everything window that lost real external edits | Replaced by "our own write is not re-notified as an external change": a real `put` is reported once, and the watcher's next tick raises nothing because nothing differs | WP-03 |
+| `file_watcher_test.exs` "detects file changes and notifies the server to reload" | AF-17. Meck'd `Server.reload/0` **and** `notify_external_change/0` and asserted both were called -- that pair was the 0-arity double-fire | Rewritten against the real server, no meck: a real external edit raises exactly one event and the config reflects it | WP-03 |
+
+Two of the WP-01 rows are hygiene rather than defect-assertions, and both were invisible before ruling R4: while a load from a nonexistent location reported success with an empty config, a test that destroyed the location it depended on still passed. The suite was green over the top of them. The wider isolation sweep is AC-04.5 (WP-04); these are only what WP-01's change made visible.
 
 Remaining known-in-advance candidates: map_test.exs:174-180, server_test.exs:341-375, file_watcher_test.exs:73-104, cfg_test.exs:99-109, auto_config_test.exs theatre tests.
 

@@ -185,7 +185,32 @@ defmodule Arca.Config.Server do
   end
 
   @doc """
+  Reloads the configuration after a write to the file was detected.
+
+  Identical to `reload/0` except in what it announces: a write raises a change
+  event only when the configuration actually differs from the one already in
+  memory. That is what stops the application's own writes from arriving back as
+  external changes, without a suppression window for a real external edit to be
+  lost in. An explicit `reload/0`, by contrast, announces either way, because
+  the caller asked for it and may be holding derived state to refresh.
+
+  ## Returns
+    - `{:ok, config}` with the loaded configuration if successful
+    - `{:error, reason}` if an error occurred
+  """
+  @spec reload_external() :: {:ok, map()} | {:error, term()}
+  def reload_external do
+    GenServer.call(__MODULE__, {:reload, :announce_if_changed})
+  end
+
+  @doc """
   Subscribes to changes to a specific configuration key.
+
+  Delivers `{:config_updated, key_path, new_value}` on every path that changes
+  the value at this key -- put, delete, reload, an externally detected edit, and
+  a location switch -- including when it changed because an ancestor was
+  replaced. A path whose value did not change is not reported. The full matrix
+  is in the `Arca.Config` module documentation.
 
   ## Parameters
     - `key`: A dot-separated string or atom path (e.g., "database.host" or [:database, :host])
@@ -217,7 +242,13 @@ defmodule Arca.Config.Server do
   end
 
   @doc """
-  Registers a callback function to be called when the configuration changes externally.
+  Registers a callback function to be called when the configuration changes.
+
+  Fires once per change event on every path -- put, delete, reload, an
+  externally detected edit, and a location switch -- not only on external edits.
+  The callback runs outside this server's process, so it may read or write
+  configuration itself. The full matrix is in the `Arca.Config` module
+  documentation.
 
   ## Parameters
     - `callback_id`: An identifier for the callback (used for unregistering)
@@ -250,6 +281,11 @@ defmodule Arca.Config.Server do
   @doc """
   Adds a callback function to be called whenever the configuration changes.
   Unlike `register_change_callback/2`, this callback does not receive any arguments.
+
+  Fires once per change event on every path: put, delete, reload, an externally
+  detected edit, and a location switch. It previously fired twice for a single
+  externally detected change. The full matrix is in the `Arca.Config` module
+  documentation.
 
   ## Parameters
     - `callback_fn`: A 0-arity function to execute when config changes
@@ -377,23 +413,7 @@ defmodule Arca.Config.Server do
         conf when is_map(conf) -> conf
       end
 
-    # Silently dispatch notifications
-    require Logger
-
-    # Notify all registered callbacks with current config
-    Registry.dispatch(Arca.Config.CallbackRegistry, :config_change, fn entries ->
-      for {_process_pid, {id, callback_fn}} <- entries do
-        # Execute callback in the process that requested it
-        try do
-          callback_fn.(config)
-        rescue
-          e ->
-            Logger.error("Config change callback error: #{inspect(id)}: #{inspect(e)}")
-        end
-      end
-    end)
-
-    # Also notify 0-arity callbacks
+    dispatch_config_callbacks(config)
     notify_callbacks()
 
     {:ok, :notified}
@@ -405,21 +425,6 @@ defmodule Arca.Config.Server do
   def init(_) do
     # Start with empty configuration - configuration will be loaded during start phase
     {:ok, %{config: %{}, loaded: false}}
-  end
-
-  @impl true
-  def handle_info({:notify_paths, paths_to_notify}, state) do
-    # Process each path for notification
-    Enum.each(paths_to_notify, fn {path, value} ->
-      # Use Registry directly to notify subscribers
-      Registry.dispatch(Arca.Config.Registry, path, fn entries ->
-        for {pid, _} <- entries do
-          send(pid, {:config_updated, path, value})
-        end
-      end)
-    end)
-
-    {:noreply, state}
   end
 
   @impl true
@@ -468,8 +473,8 @@ defmodule Arca.Config.Server do
 
     case write_config(new_config) do
       :ok ->
-        key_path |> Cache.put(value) |> report_cache_result()
-        notify_change(key_path, new_config)
+        rebuild_cache(new_config)
+        notify_write(current_config, new_config)
 
         {:reply, {:ok, value}, %{state | config: new_config}}
 
@@ -491,8 +496,8 @@ defmodule Arca.Config.Server do
 
     case write_config(new_config) do
       :ok ->
-        key_path |> Cache.invalidate() |> report_cache_result()
-        notify_change(key_path, current_config)
+        rebuild_cache(new_config)
+        notify_write(current_config, new_config)
 
         {:reply, {:ok, :deleted}, %{state | config: new_config}}
 
@@ -504,16 +509,17 @@ defmodule Arca.Config.Server do
   end
 
   @impl true
-  def handle_call(:reload, _from, state) do
+  def handle_call(:reload, from, state), do: handle_call({:reload, :announce}, from, state)
+
+  @impl true
+  def handle_call({:reload, announcement}, _from, state) do
     case LegacyCfg.load() do
       {:ok, config} ->
         rebuild_cache(config)
-
-        # Notify all callbacks of the change
-        notify_callbacks()
+        announce(announcement, state.config, config)
 
         # Return success
-        {:reply, {:ok, config}, %{state | config: config}}
+        {:reply, {:ok, config}, %{state | config: config, loaded: true}}
 
       {:error, reason} = error ->
         {:reply, error, Map.put(state, :load_error, reason)}
@@ -560,8 +566,7 @@ defmodule Arca.Config.Server do
         # Restart file watcher with new location
         Arca.Config.FileWatcher.start_watching()
 
-        # Notify all callbacks of the change
-        notify_callbacks()
+        notify_change(state.config, config)
 
         # Return previous location for restoration
         {:reply, {:ok, previous_location}, %{state | config: config, loaded: true}}
@@ -741,12 +746,97 @@ defmodule Arca.Config.Server do
     end
   end
 
-  # Notify subscribers of a mutated key path and its ancestors, then run the
-  # 0-arity callbacks. Only ever called once a mutation has actually landed.
-  defp notify_change(key_path, config) do
-    paths_to_notify = get_notification_paths(key_path, config)
-    Process.send(self(), {:notify_paths, paths_to_notify}, [:noconnect])
-    notify_callbacks()
+  defp announce(:announce, previous_config, current_config),
+    do: notify_change(previous_config, current_config)
+
+  defp announce(:announce_if_changed, previous_config, current_config),
+    do: notify_write(previous_config, current_config)
+
+  # A write that changed nothing is not a change, so it raises no event. This
+  # covers both the application's own writes and the ones the watcher finds on
+  # disk, which is why our writes never arrive back as external changes. It is
+  # also what stops a callback which writes a derived value from re-triggering
+  # itself forever -- a loop that only became reachable when callbacks started
+  # firing on the write paths.
+  defp notify_write(config, config), do: :ok
+
+  defp notify_write(previous_config, current_config),
+    do: notify_change(previous_config, current_config)
+
+  # The single notification path for every mutation: put, delete, reload,
+  # externally detected change, and location switch. Each channel fires exactly
+  # once per event -- per-key subscribers for the paths whose value changed,
+  # config callbacks and simple callbacks once each.
+  #
+  # A (re)load is an event in its own right, even when the values come back
+  # identical: the caller asked for it, and a consumer may be holding derived
+  # state it wants refreshed. Per-key subscribers are still told only about the
+  # paths whose value actually changed.
+  defp notify_change(previous_config, current_config) do
+    notify_subscribers(previous_config, current_config)
+    dispatch_callbacks_async(current_config)
+    :ok
+  end
+
+  # Only subscribed paths are examined, so this costs nothing when nobody is
+  # listening. Comparing values rather than walking the written path and its
+  # ancestors also reaches the subscriber whose value changed because an
+  # ancestor map was replaced -- the case the ancestor walk could never see.
+  defp notify_subscribers(previous_config, current_config) do
+    Arca.Config.Registry
+    |> Registry.select([{{:"$1", :_, :_}, [], [:"$1"]}])
+    |> Enum.uniq()
+    |> Enum.each(fn path ->
+      notify_if_changed(path, value_at(previous_config, path), value_at(current_config, path))
+    end)
+  end
+
+  # Repeated variable in the head: same value before and after means no news.
+  defp notify_if_changed(_path, value, value), do: :ok
+
+  defp notify_if_changed(path, _previous_value, current_value) do
+    Registry.dispatch(Arca.Config.Registry, path, fn entries ->
+      for {pid, _registered_value} <- entries do
+        send(pid, {:config_updated, path, current_value})
+      end
+    end)
+  end
+
+  defp value_at(config, path) do
+    case get_in_nested(config, path) do
+      {:ok, value} -> value
+      {:error, _reason} -> nil
+    end
+  end
+
+  # Consumer callbacks run outside the server process. A callback that calls
+  # back into Arca.Config -- to read the new value, or to write a derived one --
+  # would otherwise deadlock against the very mutation that triggered it, and
+  # widening the matrix means callbacks now fire on paths where that is reachable.
+  defp dispatch_callbacks_async(config) do
+    Task.Supervisor.start_child(Arca.Config.TaskSupervisor, fn ->
+      dispatch_config_callbacks(config)
+      notify_callbacks()
+    end)
+
+    :ok
+  end
+
+  defp dispatch_config_callbacks(config) do
+    require Logger
+
+    Registry.dispatch(Arca.Config.CallbackRegistry, :config_change, fn entries ->
+      for {_process_pid, {id, callback_fn}} <- entries do
+        try do
+          callback_fn.(config)
+        rescue
+          e ->
+            Logger.error("Config change callback error: #{inspect(id)}: #{inspect(e)}")
+        end
+      end
+    end)
+
+    :ok
   end
 
   # Repopulate the cache from a freshly loaded config. Clearing first reports in
@@ -795,34 +885,6 @@ defmodule Arca.Config.Server do
           flatten_and_cache(value, new_prefix)
         end
       end)
-    end
-  end
-
-  # Get all paths that need notification (self and ancestors)
-  defp get_notification_paths(key_path, config) do
-    get_notification_paths(key_path, config, [])
-  end
-
-  # Single-key path (no parents to add)
-  defp get_notification_paths([_] = key_path, config, paths) do
-    add_path_if_exists(key_path, config, paths)
-  end
-
-  # Multi-level path (need to check for parents)
-  defp get_notification_paths(key_path, config, paths) do
-    # First add the current path
-    updated_paths = add_path_if_exists(key_path, config, paths)
-
-    # Then add the parent path
-    parent_path = Enum.slice(key_path, 0, length(key_path) - 1)
-    get_notification_paths(parent_path, config, updated_paths)
-  end
-
-  # Add a path to the accumulated list if it exists in the config
-  defp add_path_if_exists(key_path, config, paths) do
-    case get_in_nested(config, key_path) do
-      {:ok, value} -> [{key_path, value} | paths]
-      _ -> paths
     end
   end
 end

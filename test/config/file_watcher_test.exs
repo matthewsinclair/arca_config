@@ -1,6 +1,8 @@
 defmodule Arca.Config.FileWatcherTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Arca.Config.FileWatcher
 
   # Test the file watcher functionality without timing dependencies
@@ -70,105 +72,113 @@ defmodule Arca.Config.FileWatcherTest do
     {:ok, %{test_file: test_file}}
   end
 
-  test "register_write prevents notification loops", %{test_file: test_file} do
-    # Register a callback to detect external changes
+  # AT-03.2 (ST0002 acceptance.md). AF-18: the watcher hard-matched
+  # `{:ok, _} = Server.reload()`, so one malformed hand-edit raised a MatchError
+  # and it restarted into `watching: false` with no timer -- permanent, silent
+  # dormancy. Nothing tested it, because reload was meck'd.
+  test "watcher survives malformed JSON and recovers", %{test_file: test_file} do
+    test_pid = self()
+    {:ok, ref} = Arca.Config.add_callback(fn -> send(test_pid, :config_changed) end)
+    on_exit(fn -> Arca.Config.remove_callback(ref) end)
+
+    FileWatcher.start_watching(test_file)
+    watcher = Process.whereis(FileWatcher)
+    :sys.get_state(FileWatcher)
+
+    log =
+      capture_log(fn ->
+        File.write!(test_file, "{this is not json")
+        send(FileWatcher, :check_file)
+        # A synchronous call flushes the check that precedes it in the mailbox.
+        assert :sys.get_state(FileWatcher).watching == true
+      end)
+
+    assert log =~ "Error parsing config"
+    assert Process.whereis(FileWatcher) == watcher
+    refute_receive :config_changed, 200
+
+    # Recovery: the next valid write is detected.
+    File.write!(test_file, Jason.encode!(%{"app" => %{"name" => "Recovered"}}))
+    send(FileWatcher, :check_file)
+
+    assert_receive :config_changed, 1000
+    assert {:ok, "Recovered"} = Arca.Config.get("app.name")
+  end
+
+  # AT-03.3 (ST0002 acceptance.md). AF-19: the write token suppressed *any*
+  # change while set and advanced `last_info` past it, so an external edit
+  # landing in the 5s post-write window was dropped and never seen again. The
+  # token's value was never compared, only its nil-ness.
+  test "external edit within post-write window is detected", %{test_file: test_file} do
+    test_pid = self()
+    {:ok, ref} = Arca.Config.add_callback(fn -> send(test_pid, :config_changed) end)
+    on_exit(fn -> Arca.Config.remove_callback(ref) end)
+
+    FileWatcher.start_watching(test_file)
+    :sys.get_state(FileWatcher)
+
+    # Our own write opens the suppression window...
+    assert {:ok, "OurWrite"} = Arca.Config.put("app.name", "OurWrite")
+    assert_receive :config_changed, 1000
+
+    # ...and someone edits the file by hand inside it.
+    File.write!(test_file, Jason.encode!(%{"app" => %{"name" => "TheirEdit", "extra" => "x"}}))
+    send(FileWatcher, :check_file)
+
+    assert_receive :config_changed, 1000
+    assert {:ok, "TheirEdit"} = Arca.Config.get("app.name")
+  end
+
+  # Replaces a test that asserted AF-19: it registered a write token, then wrote
+  # *different* content by hand and asserted no notification -- enshrining the
+  # suppress-everything window that lost real external edits. The contract it
+  # was reaching for is this one: our own write does not come back a second time
+  # as an external change.
+  test "our own write is not re-notified as an external change", %{test_file: test_file} do
     test_pid = self()
 
     Arca.Config.register_change_callback(:test_callback, fn _config ->
       send(test_pid, :config_changed_externally)
     end)
 
-    # Get the file watcher's initial state (we don't need to use this, just checking it works)
-    _state_before = :sys.get_state(FileWatcher)
+    on_exit(fn -> Arca.Config.unregister_change_callback(:test_callback) end)
 
-    # Generate a token and register it with the watcher
-    token = System.monotonic_time()
-    FileWatcher.register_write(token)
+    FileWatcher.start_watching(test_file)
+    :sys.get_state(FileWatcher)
 
-    # Verify token was registered
-    state_after = :sys.get_state(FileWatcher)
-    assert state_after.write_token == token
+    # The write itself is a change event, and is reported once.
+    assert {:ok, "UpdatedApp"} = Arca.Config.put("app.name", "UpdatedApp")
+    assert_receive :config_changed_externally, 1000
 
-    # Make a change to the config file with this token
-    # (simulate what would happen in write_config)
-    File.write!(test_file, Jason.encode!(%{"app" => %{"name" => "UpdatedApp"}}, pretty: true))
+    # The token is still recorded for diagnostics.
+    assert :sys.get_state(FileWatcher).write_token != nil
 
-    # Force a file check (rather than waiting for the timer)
+    # The watcher then sees the file we just wrote. Nothing changed relative to
+    # what is already in memory, so it raises nothing.
     send(FileWatcher, :check_file)
 
-    # We shouldn't receive a notification since it's our own change
     refute_receive :config_changed_externally, 500
-
-    # Clean up
-    Arca.Config.unregister_change_callback(:test_callback)
   end
 
+  # Replaces a test that meck'd Server.reload/0 and notify_external_change/0 and
+  # asserted both were called. That pair was the 0-arity double-fire (AF-17):
+  # reload notifies, and notify_external_change notified again. The watcher now
+  # reloads, and the reload is what raises the event -- once. Tested against the
+  # real server rather than a mock of it.
   test "detects file changes and notifies the server to reload", %{test_file: test_file} do
-    # Mock the Server functions
     test_pid = self()
-    :meck.new(Arca.Config.Server, [:passthrough])
+    {:ok, ref} = Arca.Config.add_callback(fn -> send(test_pid, :config_changed) end)
+    on_exit(fn -> Arca.Config.remove_callback(ref) end)
 
-    :meck.expect(Arca.Config.Server, :reload, fn ->
-      send(test_pid, :reload_called)
-      {:ok, %{}}
-    end)
+    FileWatcher.start_watching(test_file)
+    :sys.get_state(FileWatcher)
 
-    :meck.expect(Arca.Config.Server, :notify_external_change, fn ->
-      send(test_pid, :external_change_notification_called)
-      {:ok, :notified}
-    end)
-
-    # Get the file watcher state
-    _state = :sys.get_state(FileWatcher)
-
-    # Prepare different file info structs to simulate a change
-    # We'll create "before" and "after" states with different mtimes
-    old_info = %{mtime: {{2022, 1, 1}, {12, 0, 0}}, size: 100}
-    _new_info = %{mtime: {{2023, 1, 1}, {12, 0, 0}}, size: 200}
-
-    # Now manually call the file watcher's handle_info with our simulated change
-    # This directly tests the logic without relying on file system events
-    {:noreply, _new_state} =
-      FileWatcher.handle_info(
-        :check_file,
-        %{
-          config_file: test_file,
-          last_info: old_info,
-          write_token: nil,
-          watching: true,
-          check_timer: nil
-        }
-      )
-
-    # The test above simulates what the GenServer would do when it checks
-    # It's hard to verify because we're simulating the implementation
-
-    # Let's try a different approach - directly call handle_info with all the right mocks
-    # First, modify the actual file
     File.write!(test_file, Jason.encode!(%{"app" => %{"name" => "ExternalUpdate"}}, pretty: true))
+    send(FileWatcher, :check_file)
 
-    # Get fresh file info that will actually indicate a change compared to old_info
-    {:ok, _real_new_info} = File.stat(test_file)
+    assert_receive :config_changed, 1000
+    refute_receive :config_changed, 200
 
-    # Directly invoke the handle_info callback with our controlled inputs
-    {:noreply, _} =
-      FileWatcher.handle_info(
-        :check_file,
-        %{
-          config_file: test_file,
-          last_info: old_info,
-          write_token: nil,
-          watching: true,
-          check_timer: nil
-        }
-      )
-
-    # Verify both functions were called (these should be almost instant since we're
-    # not waiting for file system events)
-    assert_receive :reload_called, 100
-    assert_receive :external_change_notification_called, 100
-
-    # Clean up
-    :meck.unload(Arca.Config.Server)
+    assert {:ok, "ExternalUpdate"} = Arca.Config.get("app.name")
   end
 end

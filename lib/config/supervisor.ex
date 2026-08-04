@@ -32,6 +32,11 @@ defmodule Arca.Config.Supervisor do
       # ETS-based cache owner process for configuration values
       Arca.Config.Cache,
 
+      # Runs consumer change-callbacks off the server process, so a callback
+      # that calls back into Arca.Config cannot deadlock against the mutation
+      # that triggered it
+      {Task.Supervisor, name: Arca.Config.TaskSupervisor},
+
       # Main configuration server
       {Arca.Config.Server, []},
 
