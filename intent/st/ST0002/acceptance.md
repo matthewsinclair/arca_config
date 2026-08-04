@@ -20,7 +20,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 >
 > Ruling state (design.md carries the decisions): R2, R4, R5, R6, R7 decided as proposed. R1 decided in shape, final wire format pending vc concurrence (arca_cli parses it) -- does not block WP-01. **R3 (escript CLI: extract vs delete) remains OPEN** and is the only ruling still needed; it scopes WP-05 (AC-05.3) and nothing earlier.
 >
-> **Post-ratification amendments, 2026-08-04** (recorded rather than silently applied): AC-05.1 was rewritten after hv's ruling on vc's dependency retraction -- as ratified it inferred removability from in-repo non-reference, which is the inference hv overruled. It now defaults to KEEP and requires downstream evidence. AC-04.7 added (config/.env overriding shell env during config evaluation -- AF-40, from a vc lead, verified here). AC-00.4 is **proposed, not ratified**: it is the inverse scope item hv named, and it is a genuine scope addition, so it needs an explicit yes. Count moves 36 -> 38 if AC-00.4 is accepted.
+> **Post-ratification amendments, 2026-08-04** (recorded rather than silently applied): AC-05.1 was rewritten after hv's ruling on vc's dependency retraction -- as ratified it inferred removability from in-repo non-reference, which is the inference hv overruled. It now defaults to KEEP and requires downstream evidence. AC-04.7 added (config/.env overriding shell env during config evaluation -- AF-40, from a vc lead, verified here). AC-00.4 was proposed as a genuine scope addition and **hv accepted it on 2026-08-04**; the contract is 38. hv also **ratified the notification matrix** in design.md that same day, closing the last gap in AC-03.1.
 
 ## Acceptance Criteria
 
@@ -29,7 +29,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AC-00.1 (non-test) No public symbol is retired without the sibling-fleet probe (`function_exported?` / `Code.ensure_loaded?` / direct refs) re-run at removal time and recorded -- the `register_change_callback/2` tripwire (arca_cli liveness proxy) survives or arca_cli is migrated first -- evidence: impl.md removal log + vc ack -- satisfied: no
 - AC-00.2 (non-test) arca_cli rebuilt against the final arca_config (mix.lock advanced from 8b30615) and its full suite passes, executed by vc -- evidence: vc report -- satisfied: no
 - AC-00.3 (non-test) Every test changed because it asserted a defect is listed in impl.md's changed-tests ledger with before/after behaviour -- evidence: impl.md ledger -- satisfied: no
-- AC-00.4 (PROPOSED -- scope addition, needs hv) What downstream relies on arca_config for is identified and pinned by tests **here**, so the consumer contract is enforced rather than assumed. Arises from hv's ruling on the dependency retraction: in-repo silence over public surface signals untested contract surface, and the remedy is coverage, not deletion. Covered by AT-00.1
+- AC-00.4 (RATIFIED by hv 2026-08-04 -- scope addition accepted, contract is 38) What downstream relies on arca_config for is identified and pinned by tests **here**, so the consumer contract is enforced rather than assumed. Arises from hv's ruling on the dependency retraction: in-repo silence over public surface signals untested contract surface, and the remedy is coverage, not deletion. Covered by AT-00.1
 
 ### WP-01 -- Truthful returns (status: DONE 2026-08-04, all six ATs green)
 
@@ -87,7 +87,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### ST-level
 
-- AT-00.1 test/config/consumer_contract_test.exs::"downstream-relied-upon surface is pinned" -- covers AC-00.4 -- status: to-write (red-first, pending hv approval of AC-00.4)
+- AT-00.1 test/config/consumer_contract_test.exs::"downstream-relied-upon surface is pinned" -- covers AC-00.4 -- status: to-write (red-first; AC-00.4 ratified by hv 2026-08-04, so this is now live work)
 - Coverage: AC-00.1/.2/.3 are non-test with evidence on the AC line; AC-00.4 covered by AT-00.1
 
 ### WP-01
@@ -115,7 +115,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AT-03.2 test/config/file_watcher_test.exs::"watcher survives malformed JSON and recovers" -- covers AC-03.4 -- status: green
 - AT-03.3 test/config/file_watcher_test.exs::"external edit within post-write window is detected" -- covers AC-03.5 -- status: green
 - AT-03.4 test/config/server_test.exs::"ancestor get reflects nested put (cache coherence)" -- covers AC-03.6 -- status: green
-- Coverage: AC-03.1..6 covered (AT-03.1 covers .1/.2/.3); none uncovered. All red first; landed 2026-08-04. The matrix AC-03.1 calls "ratified" is in design.md and still needs hv's explicit yes -- it is implemented and pinned, not blessed.
+- Coverage: AC-03.1..6 covered (AT-03.1 covers .1/.2/.3); none uncovered. All red first; landed 2026-08-04. The matrix AC-03.1 calls "ratified" is in design.md and hv ratified it on 2026-08-04, so AC-03.1 is satisfied in full.
 
 ### WP-04
 

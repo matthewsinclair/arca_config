@@ -13,12 +13,12 @@
 - [ ] hv: ruling R3 (escript CLI extract vs delete) -- open, blocks WP-05 scope only
 - [x] vc node found + inbox read (3 entries, unread all session -- node postdated pickup); replied 16:40
 - [x] Post-ratification corrections: AC-05.1 withdrawn/rewritten per hv's dep ruling; AF-40 + AC-04.7 added from vc's config/.env lead; AF-15 extended with `ansi_enabled:`
-- [ ] hv: approve or reject AC-00.4 (proposed scope addition -- pin downstream-relied-upon surface with tests here)
+- [x] hv: approve AC-00.4 (2026-08-04) -- accepted; contract is 38. AT-00.1 (consumer contract test) is now live work
 - [ ] vc: concur on the R1 error shape before WP-02 lands (handover-to-vc.md, Ask 1)
 - [x] WP-01 Truthful returns (AR-1) -- landed 2026-08-04, gate PASS 6/6; suite 134 green (was 128), deterministic across 8 seeds
 - [ ] WP-02 One lookup path, one dialect, complete facade (AR-2)
 - [x] WP-03 Notification and watcher coherence (AR-3) -- landed 2026-08-04, gate PASS 6/6; suite 147 green, 8 seeds
-- [ ] hv: ratify (or overrule) the notification matrix in design.md -- AC-03.1 says "ratified"; it is implemented and pinned by test, not blessed
+- [x] hv: ratify the notification matrix in design.md (2026-08-04) -- ratified as implemented, both rules included; AC-03.1 satisfied in full
 - [x] WP-04 Location model (AR-4) -- landed 2026-08-04, gate PASS 7/7; suite 152 green, 7 seeds, isolation guard armed
 - [ ] WP-05 Surface and dependency pruning (AR-5)
 - [ ] WP-06 Downstream verification and release (vc + hv)

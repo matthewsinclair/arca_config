@@ -3,9 +3,9 @@ node: cc
 name: Control Claude
 role: control
 session_id: 797c6bb0-eb52-4b00-9870-3095616dfef2
-heartbeat_at: 2026-08-04T18:06Z
-status: paused
-focus: "ST0002 -- WP-01/03/04 DONE (19/38, suite 152 green). Both remaining WPs blocked: WP-02 on vc (R1), WP-05 on hv (R3)"
+heartbeat_at: 2026-08-04T18:14Z
+status: active
+focus: "ST0002 -- WP-01/03/04 DONE (suite 152 green). hv ratified the matrix + AC-00.4; R3 explained and pending. WP-02 still needs vc on R1"
 claims: [ST0002]
 ---
 
@@ -25,7 +25,8 @@ vc provisioned its node here at 15:59 (`intent claude ws new vc`), after this se
 
 ## DOING
 
-- Localfold complete (2026-08-04T18:06Z). Session record in `.history/20260804/wip.md`; paused for compact. The next `/in-session` pickup re-activates this node.
+- Resumed post-compact 2026-08-04T18:14Z. Session record for the day is in `.history/20260804/wip.md`; inbox from vc is empty.
+- **hv ruled twice on resume**: the notification matrix in design.md is RATIFIED as implemented (both rules, including the reload carve-out), and AC-00.4 is ACCEPTED (contract stands at 38, AT-00.1 becomes live work). R3 asked for an explanation before ruling.
 - **WP-01 (AR-1), WP-03 (AR-3), WP-04 (AR-4) DONE.** Gates 6/6, 6/6, 7/7; contract 19/38. Suite 152 green (was 128) across 7 seeds, `--warnings-as-errors` clean, dots-only, isolation guard armed. Commits `e82dfbc`, `c66bd29`, `8d82cf4`. As-built + changed-tests ledger in `intent/st/ST0002/impl.md`.
 - **Three claimed-dones awaiting vc**, whose board still reads "standby" at heartbeat 17:20Z and has not yet reacted. Fifteen changed/rewritten tests in the ledger for it to attack.
 
@@ -56,7 +57,9 @@ vc provisioned its node here at 15:59 (`intent claude ws new vc`), after this se
 - (2026-08-04) Standing lens adopted from hv's retraction ruling: for anything public in a library -- deps, facade functions, exported helpers -- in-repo silence is evidence of *untested contract surface*, not deadness. Remedy is coverage, not deletion. AC-00.4 proposed on that basis.
 - (2026-08-04) Analysis ran on Fable as verification-plus-extension, not cold -- the model switch happened in-session, so the Opus pre-read was in context. Disclosed in design.md rather than papered over; the "independently rediscovered" claim is not made.
 - (2026-08-04) hv ratified acceptance.md as the completeness boundary. R1 (shape decided, wire format pending vc), R2 keep-code-fix-README, R4 enoent bootstrap-only, R5 0.3.0, R6 one workflow + 1.20/OTP 29 cell, R7 implement pop honestly.
-- (2026-08-04) **R3 open**: escript CLI extract vs delete. Blocks WP-05 scope only (AC-05.1, AC-05.3). Audit leans delete.
+- (2026-08-04) **R3 open**: escript CLI extract vs delete. Blocks WP-05 scope only (AC-05.1, AC-05.3). Audit leans delete. hv asked for an explanation on resume; briefed with the fleet evidence (nothing outside this repo invokes the escript; arca_cli declares the same optimus fork itself, so removing it here cannot strand arca_cli).
+- (2026-08-04) hv **RATIFIED the notification matrix** as implemented, both rules included. AC-03.1 no longer carries the unblessed caveat.
+- (2026-08-04) hv **ACCEPTED AC-00.4**. The consumer contract gets pinned by tests here; AT-00.1 is live work and is the direct execution of hv's own standing lens rather than a nice-to-have.
 - (2026-08-04) WP-01 kept the mixed error dialect deliberately -- raw posix atoms for write failures, existing strings untouched -- because unifying it is WP-02 under R1 and needs vc. `format_reason/1` makes the bang functions safe for any reason shape without changing today's message text, which arca_cli text-matches.
 - (2026-08-04) hv standing rule: test output is dots only. Necessary production logging that a test provokes is captured with `ExUnit.CaptureLog` and asserted, not printed.
 - (2026-08-04) **Corrected myself mid-WP-03 on hv's ruling.** I had used "arca_cli registers zero callbacks" as evidence that widening the notification matrix was safe -- the same inference hv overruled, one step removed. An unknown consumer may register one, and the widening makes a callback that writes config reachable on the put path for the first time. Two consequences, both now non-optional: callbacks dispatch off the server process (no deadlock), and a write that changes nothing raises no event (no loop). Both pinned by test.

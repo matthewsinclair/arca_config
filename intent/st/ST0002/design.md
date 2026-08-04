@@ -164,9 +164,9 @@ Contract ratified. Six of seven rulings decided as proposed; R3 remains open and
 | R6 | CI target matrix + single workflow                                         | WP-05  | DECIDED: one workflow; floor Elixir 1.18, add a 1.20 / OTP 29 cell to match the dev toolchain.                        |
 | R7 | `Access` behaviour on the Map facade                                       | WP-02  | DECIDED: implement `pop` honestly via `Server.delete/1` rather than dropping the behaviour.                           |
 
-## Notification matrix (AC-03.1) -- implemented 2026-08-04, needs hv's explicit yes
+## Notification matrix (AC-03.1) -- RATIFIED by hv 2026-08-04
 
-AC-03.1 requires a *ratified* matrix. hv ratified the contract, not this table, so this is the proposal, implemented and pinned by test, and hv can overrule any cell. It is the canonical copy; `Arca.Config`'s moduledoc carries the same table for consumers.
+hv ratified this table on 2026-08-04, so AC-03.1's "ratified matrix" is now satisfied in full rather than implemented-but-unblessed. It is the canonical copy; `Arca.Config`'s moduledoc carries the same table for consumers. Both rules below are ratified with it, including the change of position taken during the build.
 
 | Channel                                                   | put / delete                   | reload | external edit detected | switch |
 | ----------------------------------------------------------- | -------------------------------- | ------ | ---------------------- | ------ |
