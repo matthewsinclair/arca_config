@@ -173,12 +173,36 @@ defmodule Arca.Config.MapTest do
       assert "UpdatedName" = ConfigMap.get(new_config, "app.name")
     end
 
-    test "pop works with Access.pop", %{config: config} do
-      {value, _config} = Access.pop(config, "app.name")
-      assert value == "TestApp"
+    # AT-02.4 (ruling R7). `Access.pop/2` returned the value and left the key in
+    # place, with a comment claiming keys could not be deleted -- `Server.delete/1`
+    # has always existed. The behaviour this replaces is in impl.md's ledger.
+    test "pop deletes through the one write path" do
+      config = ConfigMap.new()
+      ConfigMap.put(config, "app.doomed", "here")
 
-      # Since we can't actually remove keys, the original should still be there
+      {value, _config} = Access.pop(config, "app.doomed")
+
+      assert value == "here"
+      assert {:error, _} = Server.get("app.doomed")
+    end
+
+    test "pop on a missing key returns nil and deletes nothing" do
+      config = ConfigMap.new()
+
+      {value, _config} = Access.pop(config, "app.never_existed")
+
+      assert value == nil
       assert {:ok, "TestApp"} = Server.get("app.name")
+    end
+
+    test "get_and_update's :pop branch deletes through the same path" do
+      config = ConfigMap.new()
+      ConfigMap.put(config, "app.doomed_too", "here")
+
+      {value, _config} = Access.get_and_update(config, "app.doomed_too", fn _current -> :pop end)
+
+      assert value == "here"
+      assert {:error, _} = Server.get("app.doomed_too")
     end
   end
 end

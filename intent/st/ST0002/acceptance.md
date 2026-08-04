@@ -18,7 +18,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 >
 > **STATUS: RATIFIED by hv, 2026-08-04.** This is the completeness boundary for ST0002. Scope changes and AT weakenings now need hv; clarifications are verifier-and-builder.
 >
-> Ruling state (design.md carries the decisions): R2, R4, R5, R6, R7 decided as proposed. R1 decided in shape, final wire format pending vc concurrence (arca_cli parses it) -- does not block WP-01. **R3 (escript CLI: extract vs delete) remains OPEN** and is the only ruling still needed; it scopes WP-05 (AC-05.3) and nothing earlier.
+> Ruling state (design.md carries the decisions): **all seven rulings are decided.** R2, R4, R5, R6, R7 as proposed; R3 decided 2026-08-04 as *extract* (CLI to `Arca.Config.CLI`, single Optimus dispatch, escript target dropped, `mix arca.config` and `optimus` kept). R1 is decided in shape; the final wire format is the one open coordination item, pending vc's concurrence because arca_cli parses it. It gates AC-02.2 alone.
 >
 > **Post-ratification amendments, 2026-08-04** (recorded rather than silently applied): AC-05.1 was rewritten after hv's ruling on vc's dependency retraction -- as ratified it inferred removability from in-repo non-reference, which is the inference hv overruled. It now defaults to KEEP and requires downstream evidence. AC-04.7 added (config/.env overriding shell env during config evaluation -- AF-40, from a vc lead, verified here). AC-00.4 was proposed as a genuine scope addition and **hv accepted it on 2026-08-04**; the contract is 38. hv also **ratified the notification matrix** in design.md that same day, closing the last gap in AC-03.1.
 
@@ -40,9 +40,9 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AC-01.5 A failed env-override application is surfaced (aggregate result from `load_config_phase/0`), not silently dropped
 - AC-01.6 (ruling R4) `switch_config_location/1` to a nonexistent path returns an error and leaves the previous location live; enoent-as-empty-config survives only for the documented first-run bootstrap path
 
-### WP-02 -- One lookup path, one dialect, complete facade (status: TODO)
+### WP-02 -- One lookup path, one dialect, complete facade (status: WIP -- AC-02.1/.3/.4/.5 green 2026-08-04; AC-02.2 waits on the R1 wire format)
 
-- AC-02.1 Exactly one nested get/put/delete/write implementation remains; every public write path registers the watcher write-token exactly once (no self-notification fork)
+- AC-02.1 Exactly one nested get/put/delete/write implementation remains; every public write path registers the watcher write-token exactly once (no self-notification fork) -- the token clause is moot: WP-03 removed the token mechanism, so AT-02.1 pins the behaviour it protected
 - AC-02.2 (ruling R1) A missing key yields one canonical machine-matchable error shape from every entry point (facade, Server, Cfg-or-successor, Map); the four current dialects are gone
 - AC-02.3 The facade exposes `delete/1`, `delete!/1`, and a location-inspection API (`get_config_location/0` returning path, file, and source) such that arca_cli's `cli_command_helper.ex:350` call works unmodified -- satisfied: yes (2026-08-04; pinned by AT-00.1)
 - AC-02.4 (ruling R7) `Access.pop/2` and `get_and_update/3`'s `:pop` actually delete through the one write path, or the Access implementation is removed
@@ -102,11 +102,11 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### WP-02
 
-- AT-02.1 test/config/server_test.exs::"every public write path registers exactly one write token" -- covers AC-02.1 -- status: to-write (red-first)
+- AT-02.1 test/config/server_test.exs::"a write through Cfg has the same effect as a write through Server" (+ the read sibling) -- covers AC-02.1 -- status: green (red-first). Restated: the AC asked for the watcher write-token to be registered once per path, and WP-03 removed the token mechanism outright, so the AT pins the behaviour the token existed to protect -- disk, cache and subscribers move together on every public write
 - AT-02.2 test/config/error_dialect_test.exs::"missing key shape is canonical across all entry points" -- covers AC-02.2 -- status: to-write (red-first)
-- AT-02.3 test/config/facade_test.exs::"facade delete/delete!/get_config_location" -- covers AC-02.3 -- status: to-write (red-first)
-- AT-02.4 test/config/map_test.exs::"Access.pop deletes through the write path" -- covers AC-02.4 -- status: to-write (red-first)
-- AT-02.5 test/config/server_test.exs::"get_config single reply shape (no GenServer meck)" -- covers AC-02.5 -- status: to-write (red-first)
+- AT-02.3 covered by AT-00.1 in test/config/consumer_contract_test.exs::"the facade exposes the location and delete API its docs promise" -- covers AC-02.3 -- status: green (red-first). Folded into the consumer contract module rather than a separate facade_test.exs: the reason the facade needs these is that a consumer expects them, so the assertion belongs where the consumer contract lives
+- AT-02.4 test/config/map_test.exs::"pop deletes through the one write path" (+ missing-key and get_and_update siblings) -- covers AC-02.4 -- status: green (red-first)
+- AT-02.5 test/config/server_test.exs::"the :get_config call answers with the config map itself" (+ the notify_external_change sibling) -- covers AC-02.5 -- status: green. Characterisation rather than red-first, stated plainly: the substance of this AC is removing an unreachable clause and the mock that fabricated a reply to reach it, so the AT holds the real behaviour across the removal rather than failing before it
 - Coverage: AC-02.1..5 each have an AT; none uncovered
 
 ### WP-03

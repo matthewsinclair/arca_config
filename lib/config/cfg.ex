@@ -1,8 +1,28 @@
 defmodule Arca.Config.Cfg do
   @moduledoc """
-  Provides a simple programmatic API to a set of configuration properties held in a JSON config file.
+  Resolves where the configuration lives, loads it, and reads it from disk.
+
+  ## What this module owns
+
+  This is the **location and load authority**: `config_file/0`, `config_pathname/0`,
+  `config_filename/0`, `config_location/0`, `env_var_prefix/0` and `load/2`. Every
+  other module in the library asks this one where the configuration is --
+  `Server`, `FileWatcher` and `InitHelper` all resolve through it -- and these
+  functions are pure over the environment and the filesystem, so they answer
+  without a running server.
+
+  It was aliased `LegacyCfg` inside `Server` for a long time while being the live
+  loader on every load, reload and switch path. It is not legacy.
+
+  What it does *not* own is nested get and put. `get/1`, `get!/1`, `put/2` and
+  `put!/2` are kept as public API and now delegate to `Arca.Config.Server`, which
+  holds the state, the cache and the notifications. They used to be a second
+  implementation of the same idea that read straight from disk, wrote straight to
+  disk, and never told the server or the cache -- so a value written here and a
+  value read there could disagree until the file watcher intervened.
 
   This module derives configuration paths and filenames from the config domain.
+
   The domain is `Application.get_env(:arca_config, :config_domain)` if set, and
   `:arca_config` otherwise. It is not guessed.
 
@@ -35,6 +55,8 @@ defmodule Arca.Config.Cfg do
     before calling `Arca.Config.load_config_phase/0` during the start phase
   - The config domain is checked on every access to ensure consistency
   """
+
+  alias Arca.Config.Server
 
   @doc """
   The configuration domain: either what the parent application configured, or
@@ -358,41 +380,22 @@ defmodule Arca.Config.Cfg do
   @doc """
   Provides a map-style accessor to the configuration properties.
 
+  Delegates to `Arca.Config.Server.get/1`, which is the one nested lookup in the
+  library. This used to walk the configuration itself, freshly loaded from disk
+  on every call and bypassing the cache, and reported a missing key as
+  `"'<key>' not found"` where the server said `"Key not found"` -- two
+  implementations of one idea, disagreeing about how to say no.
+
   ## Parameters
     - `key`: The key to retrieve from the configuration.
 
   ## Examples
-      iex> test_path = System.tmp_dir!()
-      iex> test_file = "config_test.json"
-      iex> app_specific_path_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_PATH"
-      iex> app_specific_file_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_FILE"
-      iex> System.put_env(app_specific_path_var, test_path)
-      iex> System.put_env(app_specific_file_var, test_file)
-      iex> File.write!(Path.join(test_path, test_file), ~s({"database": {"host": "localhost"}}))
+      iex> {:ok, _} = Arca.Config.Cfg.put("database.host", "localhost")
       iex> Arca.Config.Cfg.get("database.host")
       {:ok, "localhost"}
-      iex> File.rm(Path.join(test_path, test_file))
-      iex> System.delete_env(app_specific_path_var)
-      iex> System.delete_env(app_specific_file_var)
   """
   @spec get(String.t() | atom()) :: {:ok, any()} | {:error, String.t()}
-  def get(key) do
-    with {:ok, config} <- load() do
-      key
-      |> to_string()
-      |> String.split(".")
-      |> Enum.reduce_while(config, fn
-        k, acc when is_map(acc) -> {:cont, Map.get(acc, k)}
-        _, _ -> {:halt, nil}
-      end)
-      |> case do
-        nil -> {:error, "'#{key}' not found"}
-        value -> {:ok, value}
-      end
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  def get(key), do: Server.get(key)
 
   @doc """
   Gets the configuration property and raises an error if not found.
@@ -401,67 +404,39 @@ defmodule Arca.Config.Cfg do
     - `key`: The key to retrieve from the configuration.
 
   ## Examples
-      iex> test_path = System.tmp_dir!()
-      iex> test_file = "config_test.json"
-      iex> app_specific_path_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_PATH"
-      iex> app_specific_file_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_FILE"
-      iex> System.put_env(app_specific_path_var, test_path)
-      iex> System.put_env(app_specific_file_var, test_file)
-      iex> File.write!(Path.join(test_path, test_file), ~s({"database": {"host": "localhost"}}))
+      iex> Arca.Config.Cfg.put!("database.host", "localhost")
+      "localhost"
       iex> Arca.Config.Cfg.get!("database.host")
       "localhost"
-      iex> File.rm(Path.join(test_path, test_file))
-      iex> System.delete_env(app_specific_path_var)
-      iex> System.delete_env(app_specific_file_var)
 
   ## Raises
     - `RuntimeError`: If the key is not found in the configuration.
   """
   @spec get!(String.t() | atom()) :: any() | no_return()
-  def get!(key) do
-    case get(key) do
-      {:ok, value} -> value
-      {:error, reason} -> raise RuntimeError, message: reason
-    end
-  end
+  def get!(key), do: Server.get!(key)
 
   @doc """
   Updates a value in the configuration and returns `{:ok, value}` or `{:error, reason}`.
+
+  Delegates to `Arca.Config.Server.put/2`, the one write path, so the value is
+  persisted, the cache is refreshed and subscribers are notified -- all three, as
+  they are for any other write.
+
+  This used to be a second nested write: load from disk, update, write back, and
+  tell nobody. The running server's in-memory configuration and the ETS cache
+  both stayed on the old value until the file watcher happened to notice the
+  file had changed, and a per-key subscriber never heard at all.
 
   ## Parameters
     - `key`: The key to update in the configuration.
     - `value`: The new value to set for the key.
 
   ## Examples
-      iex> test_path = System.tmp_dir!()
-      iex> test_file = "config_test.json"
-      iex> app_specific_path_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_PATH"
-      iex> app_specific_file_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_FILE"
-      iex> System.put_env(app_specific_path_var, test_path)
-      iex> System.put_env(app_specific_file_var, test_file)
-      iex> File.write!(Path.join(test_path, test_file), "{}")
       iex> Arca.Config.Cfg.put("database.host", "127.0.0.1")
-      iex> {:ok, value} = Arca.Config.Cfg.get("database.host")
-      iex> value
-      "127.0.0.1"
-      iex> File.rm(Path.join(test_path, test_file))
-      iex> System.delete_env(app_specific_path_var)
-      iex> System.delete_env(app_specific_file_var)
+      {:ok, "127.0.0.1"}
   """
   @spec put(String.t() | atom(), any()) :: {:ok, any()} | {:error, String.t()}
-  def put(key, value) do
-    with {:ok, config} <- load() do
-      keys = String.split(to_string(key), ".")
-      updated_config = update_nested_config(config, keys, value)
-
-      case write_config(updated_config) do
-        :ok -> {:ok, value}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  def put(key, value), do: Server.put(key, value)
 
   @doc """
   Updates a value in the configuration and raises an error if the operation fails.
@@ -471,49 +446,14 @@ defmodule Arca.Config.Cfg do
     - `value`: The new value to set for the key.
 
   ## Examples
-      iex> test_path = System.tmp_dir!()
-      iex> test_file = "config_test.json"
-      iex> app_specific_path_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_PATH"
-      iex> app_specific_file_var = Arca.Config.Cfg.env_var_prefix() <> "_CONFIG_FILE"
-      iex> System.put_env(app_specific_path_var, test_path)
-      iex> System.put_env(app_specific_file_var, test_file)
-      iex> File.write!(Path.join(test_path, test_file), "{}")
-      iex> result = Arca.Config.Cfg.put!("database.host", "127.0.0.1")
-      iex> result
+      iex> Arca.Config.Cfg.put!("database.host", "127.0.0.1")
       "127.0.0.1"
-      iex> File.rm(Path.join(test_path, test_file))
-      iex> System.delete_env(app_specific_path_var)
-      iex> System.delete_env(app_specific_file_var)
 
   ## Raises
     - `RuntimeError`: If the update operation fails.
   """
   @spec put!(String.t() | atom(), any()) :: any() | no_return()
-  def put!(key, value) do
-    case put(key, value) do
-      {:ok, value} -> value
-      {:error, reason} -> raise RuntimeError, message: reason
-    end
-  end
-
-  defp update_nested_config(config, [last_key], value) do
-    Map.put(config, last_key, value)
-  end
-
-  defp update_nested_config(config, [head | tail], value) do
-    updated_subconfig = update_nested_config(Map.get(config, head, %{}), tail, value)
-    Map.put(config, head, updated_subconfig)
-  end
-
-  defp write_config(config, config_file \\ config_file()) do
-    config_file
-    |> Path.expand()
-    |> File.write(Jason.encode!(config, pretty: true))
-    |> case do
-      :ok -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
+  def put!(key, value), do: Server.put!(key, value)
 
   @doc """
   Returns the default configuration path based on the config domain name.

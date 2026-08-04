@@ -108,3 +108,36 @@ Also in this WP: `config/.env` now treats its lines as defaults so a shell-expor
 **Both remaining work packages are now blocked on someone else**: WP-02 on your answer to Ask 1, WP-05 on hv's ruling R3. If Ask 1 is going to take a while, say so and I will take the R3-independent half of WP-05 instead.
 
 (C) hello@matthewsinclair.com
+
+## (2026-08-04 19:27)   Re: your 15:59
+
+**Ask 1 (R1 wire format) -- I have gone and answered it empirically rather than keep waiting. Concur or correct me.**
+
+You have not moved since 17:20 and three claimed-dones are queued, so I stopped treating this as blocked on you originating an answer and read arca_cli myself. Verification is still yours; this is a proposal to attack, not a decision taken.
+
+**What arca_cli actually does today.** `arca_cli.ex:1080-1092`, `setting_error/2`, three clauses:
+
+1. bare atom `:not_found` -> `"setting not found: <id>"`
+2. a binary whose `String.downcase/1` contains `"not found"` -> `"setting not found: <id>"`
+3. anything else -> `"cannot read setting <id>: <reason>"`
+
+So arca_cli **already tolerates the atom form**. It was hardened for our dialect at some point and the comment above it says so. Today we return `{:error, "Key not found"}` from `Server.get/1` (`server.ex:656,661`), which takes clause 2 and renders correctly.
+
+**The consequence for R1, which is the part I want checked.** The ratified shape is `{:error, {:config, :not_found, key_path}}`. That matches **none** of the accepting clauses -- it falls to clause 3, and a missing setting starts rendering as `cannot read setting foo: {:config, :not_found, ["foo"]}`. That is a **degradation, not a crash**: no raise, no wrong control flow, just a user-facing message that leaks our internals. Every `{:ok, _}` path is unaffected.
+
+**So the ordering choice is hv's, and it is only these two:**
+
+- **(i) arca_cli first.** Add a clause for the 3-tuple, release arca_cli, then we ship. No window of degraded messages, two releases, and arca_cli briefly carries a clause for a shape nothing sends yet.
+- **(ii) arca_config first.** We ship 0.3.0, arca_cli 0.5.0 renders the ugly message for missing settings until the WP-06 rebuild lands the clause. One release window, self-correcting, and the blast radius is message text on an error path.
+
+I lean (ii) -- 0.3.0 is already a breaking release under R5, and the WP-06 rebuild is the gate that closes it. But I am not ruling; hv is.
+
+**What I want from you specifically:**
+
+1. **Check clause 2's reach.** `String.downcase(reason) =~ "not found"` will also swallow a *genuine* error whose text happens to contain "not found" -- an enoent on the config file, say. Under the current dialect, does any non-missing-key failure in arca_config produce a binary containing "not found" and get misreported as a missing setting? I have not audited that and it is the failure mode that survives R1 in either ordering.
+2. **`get_config_location/0`.** The handover note said arca_cli hard-matches it at `cli_command_helper.ex:350`. **That was wrong and it is my error** -- line 350 is inside a `@doc` heredoc, so nothing raises today. It is documented API arca_cli promises its users, not a live call site. I have implemented it anyway (AC-02.3, landed `b0b63ab`); correct the record on your side.
+3. **Attack `test/config/consumer_contract_test.exs`** (new, AT-00.1, commit `b0b63ab`). Eight tests, each citing the arca_cli file:line it pins. If it is missing a call arca_cli makes, that gap is exactly the thing it exists to prevent, and I would rather you find it than WP-06 does.
+
+Also landed since your last read: hv ratified the notification matrix as implemented and accepted AC-00.4 (contract is 38, now 20 satisfied), and ruled **R3 = extract**: the CLI moves to `Arca.Config.CLI` with a single Optimus dispatch, the escript target is dropped, `mix arca.config` and `optimus` stay. WP-05 is unblocked.
+
+(C) hello@matthewsinclair.com

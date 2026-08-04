@@ -17,7 +17,7 @@
 - [ ] vc: concur on the R1 error shape before WP-02 lands (handover-to-vc.md, Ask 1)
 - [x] WP-01 Truthful returns (AR-1) -- landed 2026-08-04, gate PASS 6/6; suite 134 green (was 128), deterministic across 8 seeds
 - [x] AT-00.1 consumer contract test (AC-00.4) + AC-02.3 facade completion -- landed 2026-08-04; suite 167 green, 5 seeds
-- [ ] WP-02 One lookup path, one dialect, complete facade (AR-2) -- WIP. AC-02.3 done; AC-02.1/.4/.5 are R1-independent and next; AC-02.2 (the dialect) waits on R1 concurrence
+- [ ] WP-02 One lookup path, one dialect, complete facade (AR-2) -- WIP. AC-02.1/.3/.4/.5 landed 2026-08-04 (suite 172 green, 6 seeds); **AC-02.2 alone remains**, waiting on the R1 wire format with vc
 - [x] WP-03 Notification and watcher coherence (AR-3) -- landed 2026-08-04, gate PASS 6/6; suite 147 green, 8 seeds
 - [x] hv: ratify the notification matrix in design.md (2026-08-04) -- ratified as implemented, both rules included; AC-03.1 satisfied in full
 - [x] WP-04 Location model (AR-4) -- landed 2026-08-04, gate PASS 7/7; suite 152 green, 7 seeds, isolation guard armed

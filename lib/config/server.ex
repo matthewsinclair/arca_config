@@ -13,7 +13,7 @@ defmodule Arca.Config.Server do
   use GenServer
 
   alias Arca.Config.Cache
-  alias Arca.Config.Cfg, as: LegacyCfg
+  alias Arca.Config.Cfg
 
   # Client API
 
@@ -406,12 +406,10 @@ defmodule Arca.Config.Server do
   """
   @spec notify_external_change() :: {:ok, :notified}
   def notify_external_change do
-    # Get current config snapshot
-    config =
-      case GenServer.call(__MODULE__, :get_config) do
-        {:ok, conf} -> conf
-        conf when is_map(conf) -> conf
-      end
+    # `:get_config` replies with the config map, and only ever has. The `case`
+    # this replaces also had an `{:ok, conf}` clause that nothing could produce;
+    # the test covering it mocked GenServer itself to fabricate the reply.
+    config = GenServer.call(__MODULE__, :get_config)
 
     dispatch_config_callbacks(config)
     notify_callbacks()
@@ -431,7 +429,7 @@ defmodule Arca.Config.Server do
   def handle_call(:load_config, _from, state) do
     # This is the documented first-run path, and the only caller allowed to read
     # a missing config file as an empty one (ruling R4).
-    case LegacyCfg.load(nil, bootstrap: true) do
+    case Cfg.load(nil, bootstrap: true) do
       {:ok, config} ->
         rebuild_cache(config)
 
@@ -513,7 +511,7 @@ defmodule Arca.Config.Server do
 
   @impl true
   def handle_call({:reload, announcement}, _from, state) do
-    case LegacyCfg.load() do
+    case Cfg.load() do
       {:ok, config} ->
         rebuild_cache(config)
         announce(announcement, state.config, config)
@@ -529,7 +527,7 @@ defmodule Arca.Config.Server do
   @impl true
   def handle_call({:switch_config_location, opts}, _from, state) do
     # Get the env var prefix
-    env_prefix = LegacyCfg.env_var_prefix()
+    env_prefix = Cfg.env_var_prefix()
     path_var = "#{env_prefix}_CONFIG_PATH"
     file_var = "#{env_prefix}_CONFIG_FILE"
 
@@ -558,7 +556,7 @@ defmodule Arca.Config.Server do
     end
 
     # Load configuration from new location
-    case LegacyCfg.load() do
+    case Cfg.load() do
       {:ok, config} ->
         # Rebuild cache with new config
         rebuild_cache(config)
@@ -597,7 +595,7 @@ defmodule Arca.Config.Server do
 
   # Load on demand the first time a key is read before the load phase has run.
   defp ensure_loaded(%{config: config, loaded: false} = state) when map_size(config) == 0 do
-    case LegacyCfg.load() do
+    case Cfg.load() do
       {:ok, loaded_config} ->
         rebuild_cache(loaded_config)
         {:ok, %{state | config: loaded_config, loaded: true}}
@@ -623,8 +621,8 @@ defmodule Arca.Config.Server do
   defp read_current_config(fallback_config) do
     require Logger
 
-    # Use the fixed Arca.Config.Cfg.config_file() function which properly expands paths
-    config_path = Arca.Config.Cfg.config_file() |> Path.expand()
+    # The resolved location, from the one authority (Arca.Config.Cfg).
+    config_path = Cfg.config_file() |> Path.expand()
 
     # Logger.debug("Reading config from path: #{config_path}")
 
@@ -725,7 +723,7 @@ defmodule Arca.Config.Server do
     # This is critical when environment variables change during runtime
     # IMPORTANT: Always fully expand paths to prevent recursive directory creation issues
     # Path.expand converts paths like "./.config/" or "/abs/path" to their absolute form
-    expanded_config_path = Arca.Config.Cfg.config_file() |> Path.expand()
+    expanded_config_path = Cfg.config_file() |> Path.expand()
 
     # Register a unique write token to avoid self-notifications
     token = System.monotonic_time()

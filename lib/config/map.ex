@@ -144,14 +144,34 @@ defmodule Arca.Config.Map do
         {get_value, put(config, key, update_value)}
 
       :pop ->
-        # Since we can't really delete keys, we'll return nil
-        {current_value, config}
+        pop(config, key)
     end
   end
 
+  @doc """
+  Removes a key from the configuration and returns its value.
+
+  Deletes through `Arca.Config.Server.delete/1`, the same write path every other
+  mutation uses, so the removal is persisted and notified like any other change.
+  This used to return the value and leave the key in place, on the stated
+  grounds that keys could not be deleted -- `Server.delete/1` has always existed
+  (ruling R7).
+
+  A key that is not set pops as `nil` and deletes nothing, matching `Access`.
+  """
   @impl Access
   def pop(%__MODULE__{} = config, key) do
-    current_value = get(config, key)
-    {current_value, config}
+    config
+    |> get(key)
+    |> pop_present(config, key)
+  end
+
+  defp pop_present(nil, config, _key), do: {nil, config}
+
+  defp pop_present(current_value, config, key) do
+    case Server.delete(key) do
+      {:ok, _} -> {current_value, config}
+      {:error, reason} -> raise RuntimeError, message: "Failed to delete config: #{inspect(reason)}"
+    end
   end
 end

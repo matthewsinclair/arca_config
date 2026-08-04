@@ -436,38 +436,29 @@ defmodule Arca.Config.ServerTest do
   end
 
   describe "notify_external_change/0" do
-    test "handles both tuple and map responses from get_config" do
-      # Register a callback to detect external changes
+    # AT-02.5. `:get_config` replies with one shape: the config map. The clause
+    # this pins used to be joined by a `{:ok, conf}` clause that nothing could
+    # produce, and the test that covered it mocked GenServer itself to fabricate
+    # the reply -- mocking the runtime to reach code the runtime cannot reach.
+    # Both are gone; this asserts the real reply through the real server.
+    test "dispatches the current config to callbacks and reports notified" do
       test_pid = self()
 
       Arca.Config.register_change_callback(:test_callback, fn config ->
         send(test_pid, {:callback_received, config})
       end)
 
-      # Test with original get_config implementation (returns map directly)
-      Server.notify_external_change()
+      on_exit(fn -> Arca.Config.unregister_change_callback(:test_callback) end)
+
+      assert {:ok, :notified} = Server.notify_external_change()
+
       assert_receive {:callback_received, config}, 500
       assert %{"app" => %{"name" => "TestApp"}} = config
+    end
 
-      # Mock the get_config implementation to return {:ok, config} tuple
-      :meck.new(GenServer, [:passthrough])
-
-      :meck.expect(GenServer, :call, fn
-        Arca.Config.Server, :get_config ->
-          {:ok, %{"test" => "tuple_response"}}
-
-        mod, msg ->
-          :meck.passthrough([mod, msg])
-      end)
-
-      # Test with mocked get_config (returns {:ok, config} tuple)
-      Server.notify_external_change()
-      assert_receive {:callback_received, tuple_config}, 500
-      assert tuple_config["test"] == "tuple_response"
-
-      # Clean up
-      Arca.Config.unregister_change_callback(:test_callback)
-      :meck.unload(GenServer)
+    test "the :get_config call answers with the config map itself" do
+      assert %{"app" => %{"name" => "TestApp"}} =
+               GenServer.call(Arca.Config.Server, :get_config)
     end
   end
 
@@ -492,6 +483,34 @@ defmodule Arca.Config.ServerTest do
 
       # Check for notification
       assert_receive {:config_updated, ["app", "name"], "NotifiedApp"}, 500
+    end
+
+    # AT-02.1 (AC-02.1). Every public write reaches the same implementation, so
+    # every public write has the same observable consequences: disk, cache and
+    # subscribers all move together. `Cfg.put/2` used to be a second nested
+    # write that loaded from disk, wrote back to disk, and told nobody -- the
+    # server's memory and the ETS cache stayed on the old value until the file
+    # watcher happened to notice, and a subscriber never heard at all.
+    #
+    # The AC's original wording asked for the watcher write-token to be
+    # registered exactly once per write path. WP-03 removed the token
+    # mechanism outright (a write that changes nothing raises no event, so
+    # there is nothing to suppress), so the invariant is stated here as the
+    # behaviour the token existed to protect.
+    test "a write through Cfg has the same effect as a write through Server" do
+      Server.subscribe("app.name")
+
+      assert {:ok, "ViaCfg"} = Arca.Config.Cfg.put("app.name", "ViaCfg")
+
+      assert_receive {:config_updated, ["app", "name"], "ViaCfg"}, 500
+      assert {:ok, "ViaCfg"} = Server.get("app.name")
+      assert {:ok, "ViaCfg"} = Arca.Config.Cache.get(["app", "name"])
+    end
+
+    test "a read through Cfg sees a write made through Server" do
+      Server.put("app.name", "WrittenViaServer")
+
+      assert {:ok, "WrittenViaServer"} = Arca.Config.Cfg.get("app.name")
     end
 
     test "unsubscribe stops notifications" do
