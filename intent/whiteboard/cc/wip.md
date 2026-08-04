@@ -3,9 +3,9 @@ node: cc
 name: Control Claude
 role: control
 session_id: 797c6bb0-eb52-4b00-9870-3095616dfef2
-heartbeat_at: 2026-08-04T19:08Z
+heartbeat_at: 2026-08-04T20:05Z
 status: active
-focus: "ST0002 -- 31/38, suite 200 green. WP-01/02/03/04 DONE, WP-05 waiting on the critic pass. Everything else is vc's or hv's"
+focus: "ST0002 -- 34/38, suite 212 green. WP-01..05 ALL DONE. Pushed to upstream; only vc's rebuild + hv's tag remain"
 claims: [ST0002]
 ---
 
@@ -25,18 +25,16 @@ vc provisioned its node here at 15:59 (`intent claude ws new vc`), after this se
 
 ## DOING
 
-- Resumed post-compact 2026-08-04T18:14Z; still active. Session record for the day is in `.history/20260804/wip.md`; inbox from vc is empty.
-- **hv ruled three times on resume**: notification matrix RATIFIED as implemented; AC-00.4 ACCEPTED (contract 38); **R3 = extract** (CLI to `Arca.Config.CLI`, single Optimus dispatch, escript target dropped, `mix arca.config` and `optimus` kept).
-- **Landed since**: AT-00.1 consumer contract + AC-02.3 (`afcff58`, `b0b63ab`), WP-02 partial (`f3aad5f`), WP-05 AC-05.1..05.5 (`284a803`), **AC-02.2 the unified dialect (`5978840`) which closes WP-02, gate PASS 5/5**. Contract 20 -> 24 -> 30 -> 31 of 38. Suite 152 -> 200 green (48 doctests, 152 tests), six seeds, compile clean, format clean, no drift.
-- **hv delegated R1's wire format to me** ("pick a sensible one"): `{:error, {:config, reason, detail}}`, arca_config first. Decided, shipped, and told to vc with the one-line clause its rebuild needs.
-- **critic-elixir is running** for AC-05.6, at hv's instruction. It is the last thing standing between WP-05 and done.
+- **WP-01 through WP-05 are all DONE.** Gates 6/6, 5/5, 6/6, 7/7, 6/6. Contract 34/38. Suite **212 passed (48 doctests, 164 tests)** across seven seeds, compile clean, format clean, no drift.
+- **Published**: `main` pushed to `upstream` (GitHub `matthewsinclair/arca_config`). arca_cli tracks `branch: main` via a github dep, so it picks this up on `mix deps.update arca_config`. Version is 0.3.0 (R5); **the `v0.3.0` tag is hv's** per AC-06.3, and this repo has no tags at all yet.
+- hv delegated R1's wire format, ruled R3 = extract, ratified the matrix and accepted AC-00.4 -- all executed.
 
-## TODO (what is left, and who it needs)
+## TODO (nothing here is mine)
 
-- **AC-05.6 -- act on the critic-elixir findings.** The only thing left in WP-05 and the only thing left that is mine. Structural half already green.
-- **AC-00.1, AC-00.2 -- vc.** No public symbol has been retired, and the removal log now says so with the evidence; both still want vc's ack and the arca_cli rebuild.
-- **WP-06** -- release: vc rebuild of arca_cli (710 tests), migration notes, 0.3.0 tag (R5).
-- Per-WP cycle unchanged: red-first ATs, implement, green, changed tests flagged in impl.md's ledger, commit.
+- **AC-00.2 -- vc rebuilds arca_cli** against this. One test will fail by design: `error_format_test.exs` "failure: a setting that does not exist" asserts the rendered not-found message, and the R1 tuple matches neither of arca_cli's accepting clauses. The one-line fix is in vc's inbox and in the CHANGELOG.
+- **AC-00.1 -- vc's ack** on the removal log. No public symbol was retired in the whole thread; the log says so with the evidence.
+- **AC-06.1 -- vc's report** on that rebuild. **AC-06.3 -- hv tags v0.3.0.**
+- If vc stays dark, these four are the entire remaining contract and none can be done from here.
 
 ## Watch-outs
 
