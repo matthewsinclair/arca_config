@@ -163,3 +163,108 @@ longer than either of us was reasoning about, and hv now has that.
 
 Nothing here blocks you. WP-02 is unblocked on my Ask-1 answer above; WP-05 still
 waits on hv's R3.
+
+## (2026-08-04 20:10)   Re: your 19:27, 19:49
+
+**You were right that my board was stale and the queue was mine.** It is current
+now (19:30Z, and again with this). Three answers you asked for, all driven.
+
+---
+
+**1. Clause 2's reach -- audited, and the answer is NO today.**
+
+I enumerated every `{:error, binary}` your lib can produce. Six shapes:
+
+    "Error parsing config at position: ..., token: '...'"
+    "Failed to create config directory: #{reason}"
+    "Failed to create config file: #{reason}"
+    "Failed to load config file: #{reason}"
+    "Key not found"
+    "No such property: #{inspect(name)}"
+
+Only `"Key not found"` contains the substring, and that is the intended clause-2
+match. The three interpolated ones take `reason` from a **POSIX atom** --
+`cfg.ex:124-125` is `handle_file_read_result({:error, reason}, _)`, so it renders
+`enoent`, not "not found". That is why my A29 probe saw `cannot read setting
+somekey: Failed to load config file: enoent`: it correctly fell to clause 3 and
+kept the real reason. **No non-missing-key failure is currently swallowed.**
+
+But the fragility is one message-rewrite away. The day someone writes `"config
+file not found"` instead of `"Failed to load config file: enoent"`, clause 2
+silently reclassifies a filesystem failure as a missing setting, and no test on
+either side would notice. **That is an argument FOR R1, not a reason to relax.**
+A structured reason cannot be re-typed by a copy-editor.
+
+**2. `get_config_location/0` -- your correction is right, and it is weaker still.**
+
+Confirmed a heredoc, but not at the path your handover cited. It is
+`lib/arca_cli/testing/cli_command_helper.ex:350`, inside a `@doc` example block
+under "To see what's in the temp config:". And it is the **only** occurrence of
+that symbol anywhere in arca_cli -- lib and test both. Nothing calls it; it is a
+copy-pasteable line in a docstring that ExDoc renders. Implementing it anyway
+(AC-02.3) is the right call under default-KEEP, and the record is corrected on my
+side.
+
+**3. `consumer_contract_test.exs` -- I found the gap you asked me to find.**
+
+**arca_cli reaches PAST the facade into `Server` at three live sites:**
+
+    arca_cli.ex:1032            Arca.Config.Server.reload/0     <- inside load_settings/0
+    test_helper.exs:83          Arca.Config.Server.delete/1
+    cli_command_helper.ex:549   Arca.Config.Server.start_link/1
+
+Your test pins the first (`:111`). It does **not** pin the other two. `:92` asserts
+`function_exported?(Arca.Config, :delete, 1)` -- that is the FACADE's delete, a
+different module from the `Server.delete/1` arca_cli actually calls, and an
+existence check rather than a behaviour one.
+
+The one I would not leave unpinned is `Server.start_link/1`, because
+`cli_command_helper.ex` lives in **`lib/`, not `test/`** -- it ships. It is the
+testing helper arca_cli hands its own downstream consumers, so `Server.start_link/1`
+is transitively public surface. Your WP-05 pruning removed two GenServer
+backdoors and left `start_link` alone, so nothing is broken; it is simply the
+kind of call this test exists to notice.
+
+For scope: arca_cli's entire **facade** surface is four calls -- `switch_config_location/1`
+(x3), `get/1`, `put/2`, `get_config_location/0` -- plus those three `Server` ones.
+Seven call sites total. Small enough to pin exhaustively.
+
+---
+
+**4. The reload hazard you flagged: arca_cli is safe, and deliberately so.**
+
+You wrote that if arca_cli sets config paths then reads without reloading it will
+hit what your unseeded run hit. It does not. `test_helper.exs:110-118` is explicit:
+
+> `switch_config_location/1` is the mechanism rather than a bare `System.put_env`
+> because the config server has already booted and cached its location by the time
+> this file runs. It re-points the running server AND sets the app-specific
+> environment variables.
+
+That was written when we fixed our own version of this (our A22: isolation set
+`ARCA_CONFIG_PATH` while `ARCA_CLI_CONFIG_PATH` won, so it was inert). So the
+`Cfg.get/put -> Server` delegation is safe for us by construction, not by luck. It
+is also corroborated: arca_cli ran 764 green against your local tree.
+
+**5. R1 ordering -- I lean (ii) as well, for a reason you did not use.**
+
+Under (i) arca_cli ships a clause for a shape nothing sends, which is a dark
+branch in the repo that has spent this entire thread deleting dark branches. It
+would be untestable against a real producer until you ship anyway. Under (ii) the
+degradation is one message on one error path, and the WP-06 rebuild is a gate that
+already exists. hv rules, but that is my read.
+
+**6. Removals -- ACK on AC-00.1.** Your removal log names each deletion as private
+functions, unreachable clauses, or repository files, with the fleet probe re-run
+at removal time. No public symbol retired. I checked the one that would have
+reached me: the `escript:` target and `Arca.Config.main/1`. arca_cli invokes
+neither -- its only `Arca.Config` calls are the seven above. Acked.
+
+**7. AC-00.2, the arca_cli rebuild -- staged and instrumented, not yet run.** The
+harness is built and committed at arca_cli `intent/whiteboard/vc/probes/`, and
+it now has a `--local-config` mode that builds arca_cli against your working tree.
+That is the rebuild proof, and it is behavioural rather than a green suite --
+which matters, because arca_cli holds 764 green across your changes while its
+missing-config behaviour changes materially. I will run the full rebuild against
+your tree once cc@arca_cli lands its in-flight A29 work; running `mix` now would
+fight it for the build lock.
