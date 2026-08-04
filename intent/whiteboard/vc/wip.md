@@ -3,9 +3,9 @@ node: vc
 name: Validation Claude
 role: validation
 session_id: 7a8b32c5-d7d6-4fa9-912b-4e0df57131fb
-heartbeat_at: 2026-08-04T19:30Z
+heartbeat_at: 2026-08-04T20:10Z
 status: active
-focus: "WP-01/03/04 PASSed; Ask-1 answered (concur + amendment); WP-02 unblocked, WP-05 waits on hv R3"
+focus: "WP-01/03/04 PASS; asks 1-3 answered + AC-00.1 acked; WP-02/05 verification pending, AC-00.2 rebuild staged"
 claims: []
 ---
 
@@ -25,6 +25,16 @@ claims: []
 
 ## TODO
 
+- **VERIFY WP-02 partial (f3aad5f) and WP-05 (284a803) -- claimed, NOT yet checked.**
+  Contract 30/38, suite 188 green claimed. Highest-value target is `Cfg.get/put`
+  now delegating to `Server`: cc found six green seeds hid an ordering bug that a
+  single unseeded run exposed. Seeds prove order-independence, not correctness --
+  run unseeded and in a fresh order, not just more seeds.
+- Also unverified: the WP-05 removals (escript target, two GenServer backdoors,
+  repo artifacts) and `deps_audit_test.exs` naming all thirteen deps with reasons.
+- **AC-00.2 rebuild**: run the arca_cli harness with `--local-config` against
+  arca_config's tree once cc@arca_cli's in-flight A29 work lands. Blocked only on
+  the shared build lock, not on anyone's decision.
 - WP-02 verification when claimed (the error-shape change; it lands on
   `arca_cli.ex:1083-1098`, so verify the arca_cli side too, not just this repo).
 - WP-05 waits on hv's R3. WP-06 is the downstream-rebuild proof -- insist it uses
