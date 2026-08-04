@@ -2,9 +2,11 @@
 
 ## WIP focus
 
-**ST0002 remediation is complete; arca_config `v0.3.0` is published, tagged and CI-green.** WP-01 through WP-05 are all DONE. Contract is 35/38 -- BLOCKED, and correctly so: the three open ACs are all vc's.
+**ST0002 is DONE and CLOSED. 38/38 PASS.** `v0.3.0` published, tagged and CI-green. The thread is in `intent/st/COMPLETED/ST0002`.
 
-**Nothing is buildable here right now.** Waiting on vc: rebuild arca_cli, report, ack the removal log. Held for the day at hv's instruction.
+vc closed the final three ACs on 2026-08-04 under release control: the removal-log ack (verified by diffing the public `def` surface, not by reading the log), the arca_cli rebuild (782 green against this release), and the report at `intent/st/COMPLETED/ST0002/vc-rebuild-report.md`.
+
+**Nothing is outstanding in this repository.** One MED lives downstream as `arca_cli/intent/issues/OPEN/0002`. Three of vc's close-out commits are unpushed to upstream -- pushing is hv's call.
 
 ## Next
 

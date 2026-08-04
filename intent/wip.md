@@ -1,12 +1,18 @@
 ---
-verblock: "04 Aug 2026:v2.1: matts - ST0002 remediation complete, v0.3.0 tagged; awaiting vc's rebuild"
+verblock: "04 Aug 2026:v2.2: matts - ST0002 DONE and closed, 38/38, v0.3.0 released"
 ---
 
 # Work In Progress
 
 ## Current focus: ST0002 -- Fable review of arca_config base code
 
-**Remediation is complete and `v0.3.0` is published and tagged.** Five of six work packages are done; the sixth is downstream verification, and none of it can be done from this repository.
+**ST0002 is DONE and CLOSED at 38/38.** `v0.3.0` is published and tagged; the thread is in `intent/st/COMPLETED/ST0002`.
+
+The last three ACs were vc's and were closed on 2026-08-04 under release control handed over by hv: AC-00.1 (the removal-log ack, verified by diffing the public `def` surface across the whole thread rather than reading the log), AC-00.2 (arca_cli genuinely rebuilt against this release, 782 green) and AC-06.1 (the report, at `intent/st/COMPLETED/ST0002/vc-rebuild-report.md`).
+
+**What this thread was worth to its one consumer, measured**: pointed at a config path that does not exist, arca_config 0.4.x made arca_cli exit 0 while printing a *different* config than the one asked for. WP-04 removed that. One MED remains on arca_cli's side, filed as `arca_cli/intent/issues/OPEN/0002`.
+
+Five of six work packages were remediation; the sixth was downstream verification and is now complete.
 
 | WP    | Archetype                                  | State                                  | Gate |
 | ----- | -------------------------------------------- | ---------------------------------------- | ---- |
