@@ -10,9 +10,8 @@ This document serves as an index of all steel threads in the project. A steel th
 
 <!-- BEGIN: STEEL_THREAD_INDEX -->
 
-| ID     | Slug                                  | Status | Created    | Completed |
-| ------ | ------------------------------------- | ------ | ---------- | --------- |
-| ST0002 | fable-review-of-arca-config-base-code | WIP    | 2026-08-04 |           |
+| ID | Slug | Status | Created | Completed |
+| -- | ---- | ------ | ------- | --------- |
 
 <!-- END: STEEL_THREAD_INDEX -->
 

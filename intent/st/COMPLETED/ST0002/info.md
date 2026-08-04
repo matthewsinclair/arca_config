@@ -1,10 +1,10 @@
 ---
 verblock: "04 Aug 2026:v1.0: matts - remediation complete, 0.3.0 published; open ACs are vc's and hv's"
 intent_version: 2.18.0
-status: WIP
+status: Completed
 slug: fable-review-of-arca-config-base-code
 created: 20260804
-completed:
+completed: 2026-08-04T20:07:55Z
 ---
 
 # ST0002: Fable review of arca_config base code
