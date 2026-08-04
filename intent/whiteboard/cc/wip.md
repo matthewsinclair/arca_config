@@ -3,10 +3,10 @@ node: cc
 name: Control Claude
 role: control
 session_id: 797c6bb0-eb52-4b00-9870-3095616dfef2
-heartbeat_at: 2026-08-04T20:57Z
-status: paused
-focus: "ST0002 done on this side: WP-01..05 DONE, v0.3.0 tagged, 35/38. Held for the day; the last three ACs are vc's"
-claims: [ST0002]
+heartbeat_at: 2026-08-04T21:12Z
+status: active
+focus: "ST0002 CLOSED 38/38 by vc. No claims, nothing in flight. Awake and holding for hv"
+claims: []
 ---
 
 # Control Claude (cc)
@@ -19,26 +19,28 @@ claims: [ST0002]
 | cc   | this session                | `arca_config`, node dir `intent/whiteboard/cc/`                                                                                         |
 | vc   | session 7a8b32c5, validator | node dir `intent/whiteboard/vc/` **in this repo** -- one session validates both arca_config and arca_cli, same session_id on both boards |
 
-**Read `inbox.vc.md` at every fold, not only at pickup.** Three vc entries once sat unread for a whole session because the node did not exist when pickup ran. The live inbox is empty.
+**Read `inbox.vc.md` at every fold, not only at pickup.** Three vc entries once sat unread for a whole session because the node did not exist when pickup ran. Four entries live (19:25--20:40), all handled during the session, none cleared.
 
 ## DOING
 
-Nothing. **Held for the day at hv's instruction.** ST0002 is complete on this side: released, tagged, and handed to vc.
+Nothing, and nothing is claimed. **ST0002 closed 38/38 by vc at `deff38f`**, moved to `intent/st/COMPLETED/ST0002/`. Awake and holding for hv.
 
-## TODO -- none of it is mine
+## TODO -- open, but none of it is arca_config's
 
-- **vc, and it is one piece of work with three outputs**: AC-00.2 rebuild arca_cli against the published head, AC-06.1 report it, AC-00.1 ack the removal log. Package: `intent/st/ST0002/release-verification.md`.
-- Contract is **35/38** and those three are the whole remainder. Nothing further can be built from here.
-- The one path that reopens work in this repo: vc's rebuild surfacing failures beyond the single expected one, which come back as fixes.
+- **Three commits sit unpushed** (`df0e700`, `0aa3509`, `deff38f` -- vc's close-out). Both `local` and `upstream` are 3 behind. `v0.3.0` itself is pushed and unaffected. hv's call whether these go up.
+- **vc's MED fast-follow lands in arca_cli, not here**: `Arca.Cli.load_settings/0` maps `{:config, :load_failed, :enoent}` to `{:ok, %{}}` unconditionally, so a mistyped `ARCA_CLI_CONFIG_PATH` reports an empty config rather than a wrong path. **The arca_config side of the fix already exists** -- `Cfg.config_location/0` returns `source: %{path:, file:}` (`cfg.ex:305-316`), built as AC-02.3 for exactly this. Nothing to build here unless the fix needs more than `source` carries.
+- **vc names one unstarted piece**: sweeping arca_cli's suite for the three lessons this thread's tests encode. arca_cli, not here.
+- The path that would reopen work in this repo -- vc's rebuild surfacing failures -- **did not fire**. arca_cli is 782 green across six seeds against `5db55a4`.
 
 ## State at fold
 
 | | |
 | --- | --- |
 | Tag | **`v0.3.0`**, annotated, pushed. The first tag this repo has ever had |
-| Commit | `7bc6abc` on `main`; the tag points at `ccd8fb5`, whose tree is identical to the CI-green build `03969fa` (everything between is documentation) |
-| WPs | WP-01..WP-05 DONE -- gates 6/6, 5/5, 6/6, 7/7, 6/6 |
-| Suite | 222 passed (48 doctests, 174 tests), 8 seeds, zero stray output |
+| Commit | `deff38f` on `main`, **3 ahead of both remotes**; the tag points at `ccd8fb5`, whose tree is identical to the CI-green build `03969fa` (everything between is documentation) |
+| Contract | **38/38 PASS**; ST0002 DONE, in `intent/st/COMPLETED/` |
+| WPs | WP-01..WP-05 DONE -- gates 6/6, 5/5, 6/6, 7/7, 6/6. WP-06 closed by vc |
+| Suite | arca_config 222 passed (48 doctests, 174 tests), 8 seeds, zero stray output. arca_cli **782 passed** against `5db55a4`, six seeds (vc) |
 | Gates | compile `--warnings-as-errors` clean, `mix test --warnings-as-errors` clean, format clean, coverage 90.47% vs threshold 90 |
 | CI | green on 1.18.0/OTP 27, 1.18.4/OTP 28, 1.20.2/OTP 29 |
 
