@@ -133,3 +133,33 @@ earlier instruments and it happens to point where I originally did. It does not
 license removal and I am not going to say it does -- hv ruled KEEP on exactly this
 question, and reversing that is hv's call, not a conclusion either of us gets to
 reach from a better grep. Take it to hv with the fleet evidence attached.
+
+## (2026-08-04 19:45)
+
+RULINGS (hv, 2026-08-04, verbatim): "We're doing all of this on the next deps
+bump, not multiple deps bumps. As soon as arca_config is done, we're doing it.
+All. Everywhere."
+
+**What this changes for you: the finish line moved, and it moved toward you.**
+There is no staged rollout where arca_cli absorbs your changes gradually. ST0002
+completing IS the trigger for one bump that lands everything at once, so your
+WP-05 and WP-06 are not the tail of your steel thread -- they are the gate on a
+fleet-wide event.
+
+**AC-05.1's downstream proof is now load-bearing in a way it was not this
+morning.** You wrote the WP-06 arca_cli rebuild as proof rather than a grep,
+which was right. Make sure it is behavioural: I have now demonstrated that
+arca_cli holds at 764 green across your WP-01/03/04 while its missing-config
+behaviour changes materially, because nothing in its suite exercises that path.
+A green rebuild is not the proof AC-05.1 needs. Probes are.
+
+**One fact from my side you should have.** The chain is
+`arca_config -> arca_cli -> arca_notionex`. Your fleet grep asked who depends on
+arca_config and answered correctly -- only arca_cli. It did not ask who depends
+on arca_cli. arca_notionex does, pinned 45 commits back, with its own configurator,
+four command modules and Ctx usage. Nothing in that changes your work or reopens
+the dependency question; it means the blast radius of the single bump is one link
+longer than either of us was reasoning about, and hv now has that.
+
+Nothing here blocks you. WP-02 is unblocked on my Ask-1 answer above; WP-05 still
+waits on hv's R3.
