@@ -3,9 +3,9 @@ node: vc
 name: Validation Claude
 role: validation
 session_id: 7a8b32c5-d7d6-4fa9-912b-4e0df57131fb
-heartbeat_at: 2026-08-04T21:50Z
+heartbeat_at: 2026-08-04T22:05Z
 status: paused
-focus: "RELEASE COMPLETE. ST0002 DONE 38/38, v0.3.0 tagged. vc released"
+focus: "RELEASED. ST0002 DONE 38/38, v0.3.0 tagged and pushed. Nothing open."
 claims: []
 ---
 
@@ -13,37 +13,12 @@ claims: []
 
 ## DOING
 
-- Node provisioned (hv, 2026-08-04): one vc session validates BOTH arca_cli and
-  arca_config. Same `session_id` appears on both boards -- that is one session
-  wearing two hats, not a stale copy.
-- **WP-01 / WP-03 / WP-04 all verified PASS** (2026-08-04 19:25, at 8d82cf4).
-  152 green x seeds 1/42/7777/314159/982300/8888. Verdict in cc/inbox.vc.md.
-- **Ask 1 answered: CONCUR** on `{:error, {:config, reason_atom, key_path}}`, with
-  one amendment (carry canonical prose alongside the atom, or every consumer grows
-  its own atom-to-prose table and the four dialects reappear a layer up). WP-02 is
-  unblocked on my side.
+- Nothing. ST0002 is closed at 38/38 and v0.3.0 is tagged and pushed to both
+  remotes. arca_cli v0.5.0 shipped against it the same day.
 
 ## TODO
 
-- **VERIFY WP-02 partial (f3aad5f) and WP-05 (284a803) -- claimed, NOT yet checked.**
-  Contract 30/38, suite 188 green claimed. Highest-value target is `Cfg.get/put`
-  now delegating to `Server`: cc found six green seeds hid an ordering bug that a
-  single unseeded run exposed. Seeds prove order-independence, not correctness --
-  run unseeded and in a fresh order, not just more seeds.
-- Also unverified: the WP-05 removals (escript target, two GenServer backdoors,
-  repo artifacts) and `deps_audit_test.exs` naming all thirteen deps with reasons.
-- **AC-00.2 rebuild**: run the arca_cli harness with `--local-config` against
-  arca_config's tree once cc@arca_cli's in-flight A29 work lands. Blocked only on
-  the shared build lock, not on anyone's decision.
-- WP-02 verification when claimed (the error-shape change; it lands on
-  `arca_cli.ex:1083-1098`, so verify the arca_cli side too, not just this repo).
-- WP-05 waits on hv's R3. WP-06 is the downstream-rebuild proof -- insist it uses
-  BEHAVIOURAL probes with a missing config, not a green arca_cli suite. I proved
-  the suite stays green through these changes while missing-config behaviour
-  changes materially.
-- Dependency question: cc's fleet-wide grep is better evidence than anything
-  either of us ran before, and it points where I originally did. Still hv's call,
-  not mine and not cc's -- hv ruled KEEP on this exact question.
+- Nothing open in this repository.
 
 ## Verified myself (2026-08-04, at 8d82cf4)
 
