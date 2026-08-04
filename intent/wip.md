@@ -1,206 +1,52 @@
 ---
-verblock: "25 Mar 2025:v0.6: Claude-assisted - Fixed FileWatcher token logic preventing notification loops"
+verblock: "04 Aug 2026:v0.8: matts - ST0002 contract ratified by hv; analysis phase closed, WP-01 next"
 ---
 
 # Work In Progress
 
-## FIXED: FileWatcher Token Logic for Preventing Notification Loops
+## Current focus: ST0002 -- Fable review of arca_config base code
 
-✅ Fixed a critical issue in the FileWatcher test where the token comparison logic was incorrect, causing the test to fail.
+Analysis phase COMPLETE and contract RATIFIED (2026-08-04). Remediation not yet started; next action is WP-01 (truthful returns).
 
-The issue:
-**Incorrect token comparison**: The FileWatcher was comparing the registered token (generated with `System.monotonic_time()`) with the file's modification time (`mtime`), which are completely different values. This meant the token system wasn't working to prevent notification loops.
+State of the thread:
 
-Changes implemented:
+- 39-finding ledger in 5 archetypes: `intent/st/ST0002/design.md` (all evidence file:line; 6 findings executed by probe -- scripts + verbatim output in `intent/st/ST0002/probes/`)
+- Acceptance contract drafted: `intent/st/ST0002/acceptance.md` -- 36 ACs; `intent ac status ST0002` reads 0/36 BLOCKED (the correct pre-remediation state)
+- 6 risk-ordered work packages created (`intent wp list ST0002`), briefs filled, all Not Started
+- Anchor contract: every public return value is a truthful account of what happened on disk, and every documented promise (precedence, notification, location) matches the code
 
-1. **Fixed token comparison logic in `Arca.Config.FileWatcher`:**
-   - Changed from comparing `token == current_info.mtime` to checking `token == nil`
-   - Now properly distinguishes between internal changes (when token is set) and external changes (when token is nil)
-   - Added logic to clear the token after processing a file change to allow future legitimate notifications
+Headline findings, all executed not just traced: a `put` against a read-only file logs `:eacces` yet returns `{:ok, "v"}` and serves the phantom value from memory thereafter (AF-01); with no explicit domain, the detection heuristic resolved the config domain to `:elixir_uuid`, an unused dependency (AF-26); a `put` whose target file did not yet exist was silently redirected into the repo root by the location existence-flip (AF-25); the notification matrix is incoherent -- per-key subscribers never fire on external file changes, the watcher's reason to exist (AF-17). Documented, not executed: README states the env-var precedence backwards -- the root cause of arca_cli's A22 (AF-23).
 
-2. **Updated state management:**
-   - Token is now cleared after each file check cycle to prevent stale tokens from blocking future notifications
-   - Improved comments to clarify the intended behavior
+## Rulings (hv, 2026-08-04) -- decisions in design.md
 
-3. **Test verification:**
-   - The failing FileWatcher test now passes consistently
-   - All other tests continue to pass, confirming no regressions
+Six decided as proposed: R2 keep-code-and-fix-README, R4 enoent bootstrap-only, R5 semver 0.3.0, R6 one CI workflow + 1.20/OTP 29 cell, R7 implement `Access.pop` honestly. R1 (canonical error shape `{:error, {:config, reason_atom, key_path}}`) decided in shape, wire format pending vc concurrence -- gates WP-02, not WP-01.
 
-These changes ensure:
+**Still open: R3** -- escript CLI, extract-and-fix vs delete. The only outstanding ruling. It scopes WP-05 (AC-05.1, AC-05.3) and nothing earlier; delete would also remove `optimus`, the last non-Jason runtime dep. Audit leans delete.
 
-- Internal file writes (from `Arca.Config.put/2`) don't trigger notification loops
-- External file changes are properly detected and trigger notifications
-- The token system works as intended to distinguish between internal and external changes
-- File watchers reliably detect external configuration changes without false positives
+## Coordination
 
-## ADDED: Fix for Circular Dependencies in Application Startup
+- Nodes: `hv` = Matthew (adjudication, model switches, release tag); `cc` = this repo's session (author); `vc` = the arca_cli session (verification + the live downstream, 710 tests). Whiteboard at `intent/whiteboard/cc/`; hv carries traffic between repos.
+- Deletion tripwire: arca_cli probes `function_exported?(Arca.Config, :register_change_callback, 2)` as a liveness proxy (`arca_cli lib/arca_cli.ex:118-130`). The symbol survives until arca_cli migrates. Sibling fleet (arca_id, arca_dbutils, arca_notionex, arca_doc, arca_optimus) verified clean of Arca.Config references.
+- arca_cli pins `8b30615`; drift to HEAD is mix.lock-only (source-identical).
 
-✅ Implemented a solution for circular dependencies during application startup, particularly focusing on Arca.Config initialization.
+## Next (post-ratification, risk order)
 
-Key components of the implementation:
+WP-01 truthful returns -> WP-02 one lookup path / one dialect / complete facade -> WP-03 notification + watcher coherence -> WP-04 location model -> WP-05 surface + dependency pruning -> WP-06 vc rebuild of arca_cli + release. Per-WP cycle: red ATs first, implement, green, critic gate, changed-tests flagged in impl.md's ledger, commit.
 
-1. **Created a delayed initialization mechanism:**
-   - Added `Arca.Config.Initializer` GenServer that handles configuration loading after application startup
-   - Implemented a configurable delay (default 500ms) before initialization happens
-   - Added process identity tracking to prevent circular calls during startup
+## Post-ratification corrections (2026-08-04)
 
-2. **Modified application startup sequence:**
-   - Changed `Arca.Config.start/2` to return immediately after starting the supervisor
-   - Moved environment variable override application to the delayed initialization phase
-   - Added conservative default values during initialization to prevent blocking
+vc provisioned a node in this repo at 15:59, after this session's pickup, so three inbox entries went unread until fold time. Acting on them changed the ratified contract in three places, all recorded rather than silently applied:
 
-3. **Implemented process identity guards:**
-   - Added process tracking to prevent circular dependencies
-   - Provided conservative defaults when accessed during initialization
-   - Created a registry pattern for delayed initialization callbacks
+- **AC-05.1 withdrawn and rewritten.** As ratified it reduced dependencies "to the referenced set" -- inferring removability from in-repo non-reference, which is precisely the inference hv overruled vc for the same day. Default is now KEEP; removal requires positive downstream evidence with the WP-06 arca_cli rebuild as proof. Downstream evidence has since been gathered and is in design.md; it happens to support removal, and still does not license it.
+- **AF-40 + AC-04.7 added** from a vc lead, verified here: `config/.env` (present, gitignored) is applied by `System.put_env` during config evaluation and unconditionally overwrites shell-exported config vars. That is the mechanism behind tests writing into the repo root, and the same defect class as arca_cli's A22.
+- **AC-00.4 proposed, not ratified** -- hv's inverse scope item from the retraction ruling: pin what downstream relies on with tests here, so the consumer contract is enforced rather than assumed. A genuine scope addition, so it needs an explicit yes. Contract count 36 -> 38 if accepted.
 
-4. **Added callback registration for initialization:**
-   - Created an API for registering callbacks that should run after initialization
-   - Implemented safeguards to ensure callbacks don't cause circular dependencies
-   - Added proper error handling for callback execution
+Standing lens adopted from that ruling: for anything public in a library, in-repo silence is evidence of untested contract surface, not deadness.
 
-These changes resolve circular dependency issues during application startup by:
+## Handover to vc
 
-- Ensuring configuration is loaded after the application tree is established
-- Providing reasonable defaults during initialization instead of triggering recursive lookups
-- Allowing dependent components to register for notification after initialization is complete
-- Using process identity tracking to prevent circular dependency cycles
-
-## FIXED: Path Handling and Environment Variable Preservation Issues
-
-✅ Fixed an issue in the `config_pathname/0` function that was causing test failures with environment variable paths containing trailing slashes.
-
-The issue:
-
-**Environment variable path preservation**: When an environment variable specifying a path included a trailing slash (e.g., `/tmp/`), the `Path.expand/1` function was removing it, causing tests to fail that expected the exact string format preservation.
-
-Changes implemented:
-
-1. **Modified `config_pathname/0` function in `Arca.Config.Cfg` module:**
-   - Now preserves the exact path format from environment variables
-   - Only expands paths when they don't come from environment variables
-   - Ensures trailing slashes in paths are maintained when specified in environment variables
-
-2. **Updated tests for better resilience:**
-   - Modified test assertions to check for expected path patterns rather than strict equality
-   - Made tests more resilient to path expansion differences
-   - Fixed all compiler warnings in test files
-
-3. **Cleaned up the codebase:**
-   - Fixed unused variable warnings in test files
-   - Ensured clean compilation with `--warnings-as-errors`
-   - Improved test patterns for path handling
-
-These changes ensure:
-
-- Path formatting from environment variables is preserved exactly as specified
-- All tests now pass consistently with no warnings or errors
-- The codebase is cleaner and more maintainable
-- Better adherence to the principle of least surprise when using environment variables
-
-## ADDED: Environment Variable Override Support
-
-✅ Added a new feature to allow overriding specific configuration values using environment variables at application startup.
-
-This enhancement makes the configuration system more flexible for deployment in different environments:
-
-**Environment Variable Overrides**: Users can now set environment variables following the pattern `APP_NAME_CONFIG_OVERRIDE_SECTION_KEY=value` to override specific configuration values at startup. For example, `MY_APP_CONFIG_OVERRIDE_DATABASE_HOST=production-db.example.com`.
-
-Implementation details:
-
-1. **Added `apply_env_overrides()` function to Arca.Config:**
-   - Scans environment variables for the override pattern
-   - Parses keys and values
-   - Applies each override to the configuration
-   - Logs each override that is applied
-
-2. **Integrated with application startup:**
-   - Called from the application's `start/2` function
-   - Ensures overrides are applied before any other components access configuration
-
-3. **Added smart type conversion:**
-   - String values like "true"/"false" converted to boolean
-   - Numeric strings converted to integers or floats
-   - JSON-formatted strings parsed into maps or lists
-   - All other values kept as strings
-
-4. **Updated documentation:**
-   - Added to technical product design
-   - Updated user guide
-   - Added detailed section to deployment guide
-   - Added examples for Docker and other deployment scenarios
-
-This feature enables:
-
-- Environment-specific configuration in production, staging, and development
-- Easy configuration of containerized applications
-- Passing configuration through CI/CD pipelines
-- Setting credentials and secrets without hardcoding
-
-## FIXED: Critical Path Handling Bug in Configuration System
-
-✅ Fixed a serious path handling bug in Arca.Config where configuration files were being written to incorrect, recursive directory structures.
-
-The critical issue was:
-
-**Path handling bug**: When using absolute paths in config environment variables (e.g., `MULTIPLYER_CONFIG_PATH=/Users/matts/.multiplyer`), the system was creating recursive directory structures like `./.multiplyer/Users/matts/.multiplyer/` and writing config files there instead of to the correct absolute location.
-
-Changes implemented:
-
-1. **Completely rewrote path handling in the Server module:**
-   - Now directly accessing environment variables to get path information
-   - Using consistent path expansion at a single point
-   - Properly handling absolute paths to prevent recursive structures
-   - Adding clear logging of all path information
-
-2. **Eliminated path caching in the Server state:**
-   - Removed cached config_file path from GenServer state
-   - Ensuring environment variable changes are always picked up
-
-3. **Added a dedicated test case:**
-   - Created a test that explicitly verifies correct handling of absolute paths
-   - Confirms configs are written to the exact location specified in env vars
-
-These changes ensure:
-
-- Configuration is always written to and read from the same location
-- Environment variable changes are immediately respected
-- Recursive directory structures are never created
-- Clear logs show exactly where files are being read from and written to
-
-## FIXED: Configuration File Integrity Issues
-
-✅ Fixed critical issues in the Arca.Config.Server module where updating a single key with Arca.Config.put() was causing problems with configuration files.
-
-Two major issues were addressed:
-
-1. **Config overwrite bug**: The module was overwriting the entire configuration when updating a single key.
-   - Now we always read the latest configuration from file before applying updates
-   - This ensures that when updating a key like `llm_client_type`, all other keys are preserved
-
-2. **Path handling bug**: The module was incorrectly handling file paths, creating files in the wrong locations.
-   - Fixed path handling to always use absolute paths consistently
-   - Added proper expansion of paths to prevent creating files like "Users/matts/.multiplyer" in the wrong location
-   - Added detailed logging to help identify path-related issues
-
-Key improvements:
-
-1. More robust path handling with explicit checks for absolute vs. relative paths
-2. Added safeguards to ensure directories exist before writing to files
-3. Enhanced logging to show exactly where files are being read from and written to
-4. Refactored code to use idiomatic Elixir pattern matching and multiple function heads
-
-Test cases confirm that when a top-level key is updated, the rest of the configuration remains intact, and paths are handled correctly across different environments.
+`intent/st/ST0002/handover-to-vc.md` is the self-contained verification package for the arca_cli session: what to read, the provenance disclosure to be sceptical of, five corrections to their original handover note (each with the verifying command), and four asks -- of which Ask 1 (concur on the R1 error shape) gates WP-02.
 
 ## Context for LLM
 
-This document captures the current state of development on the project. When beginning work with an LLM assistant, start by sharing this document to provide context about what's currently being worked on.
-
-### How to use this document
-
-1. Update the "Current Focus" section with what you're currently working on
-2. List active steel threads with their IDs and brief descriptions
-3. Keep track of upcoming work items
-4. Add any relevant notes that might be helpful for yourself or the LLM
-
-When starting a new steel thread, describe it here first, then ask the LLM to create the appropriate steel thread document using the STP commands.
+This document is the project-level post-session snapshot; the live channel during a session is `intent/whiteboard/<node>/wip.md`. On restart: run `/in-session`, read this file, then `intent/st/ST0002/design.md` (ledger + rulings) and `acceptance.md` (contract). Do not start remediation while the contract is unratified.
