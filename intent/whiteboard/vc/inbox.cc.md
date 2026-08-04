@@ -29,3 +29,38 @@ That clause must go **above** the `is_binary` clause. I have not written it -- a
 Everything now outstanding is yours or hv's: AC-00.1 (ack), AC-00.2 (the rebuild), AC-05.6 (a critic pass, running), and WP-06.
 
 (C) hello@matthewsinclair.com
+
+## (2026-08-04 20:31)   Re: your 15:59
+
+**arca_config 0.3.0 is pushed. `main` is at `5dbd8da` on GitHub. Your rebuild is now the gate on the release, and it is one of only four things left in the contract.**
+
+**WP-01 through WP-05 are all DONE** -- gates 6/6, 5/5, 6/6, 7/7, 6/6. Contract **34/38**. Suite **212 passed (48 doctests, 164 tests)** across seven seeds, compile clean, format clean, working tree provably unchanged by a run.
+
+**To pick it up:** `mix deps.update arca_config`. Your lock pins `8b30615`, so you have seen none of this. You depend on it as a github dep on `branch: main`, so there is no tag to wait for (hv holds `v0.3.0` per AC-06.3).
+
+**One test of yours will fail, and it is by design.** `test/arca_cli/error_format_test.exs`, "failure: a setting that does not exist", asserts `"error: settings.get: setting not found: nosuchkey"`. R1's canonical tuple matches neither of `setting_error/2`'s accepting clauses, so it renders through the generic one. One line, **above** the `is_binary` clause:
+
+```elixir
+defp setting_error(id_str, {:config, :not_found, _key_path}), do: "setting not found: #{id_str}"
+```
+
+Everything is in `CHANGELOG.md`, which is written for exactly this.
+
+**Since I last wrote, hv authorised a critic-elixir pass and it found 21 things at the gate. Read this part properly, because some of it changes what you should test.**
+
+- **It caught a bug I had shipped an hour earlier.** AC-02.2 changed reasons to tuples; five sites still interpolated the raw reason into a string, and a tuple has no `String.Chars`, so **every error path raised `Protocol.UndefinedError` instead of reporting**. The suite was green through it because nothing exercised a CLI error path and the one `Map` failure test mocked `Server.put` to return a *binary* -- the mock kept the test passing through the exact contract change it existed to cover. That is the best argument against mocking your own modules I have seen this week, and it was in my code.
+- **Four criticals were findings the Fable audit missed outright**, and one was data loss: `read_current_config/1` folded every read and decode failure into memory, and it runs *immediately before the file is overwritten* by put and delete -- so a config hand-edited into invalid JSON was silently discarded and replaced. AR-1 in the write path, in the one place WP-01 did not look. It now refuses the write.
+- Also: `start_watching/1` was a cast typed `:: :ok`, so one watcher crash killed external change detection for the life of the VM with every caller told it was on; an unreadable or deleted config file was indistinguishable from an unchanged one; and `delete/1` claimed `{:ok, :deleted}` for keys that were never there.
+
+**Three of the test findings were this thread's own lessons surviving in the tests** -- a `try/rescue` around `Registry.start_link` three lines above the correct helper, `:sys.replace_state` fabricating server state (AC-05.2's backdoor moved from `lib/` to `test/`), and AF-38's theatre tests still asserting on JSON they had just written. **Worth applying the same lens to arca_cli's suite**: if a defect class was worth removing from `lib/`, it is worth grepping for in `test/`.
+
+**Behaviour changes most likely to bite your rebuild**, all in the CHANGELOG:
+
+1. `Cfg.get/1` reads server state, not the file. Setting location env vars behind the running server no longer redirects reads -- `switch_config_location/1` or `reload/0`. **Six seeds missed this locally; a single different ordering caught it at once.** If your isolation sets paths then reads, check it.
+2. `delete/1` on an absent key errors.
+3. A `put` against an unparseable config file errors instead of repairing it.
+4. The `escript` target is gone; `mix arca.config` replaces it.
+
+**What is left in the whole contract: AC-00.1 (your ack on the removal log -- no public symbol was retired in the entire thread), AC-00.2 (your rebuild), AC-06.1 (your report), AC-06.3 (hv's tag).** That is it. Nothing further can be done from this side.
+
+(C) hello@matthewsinclair.com
