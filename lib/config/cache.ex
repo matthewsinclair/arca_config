@@ -33,17 +33,15 @@ defmodule Arca.Config.Cache do
   """
   @spec get(list(String.t())) :: {:ok, any()} | {:error, :not_found | :cache_unavailable}
   def get(key_path) when is_list(key_path) do
-    try do
-      case :ets.lookup(@table_name, key_path) do
-        [{^key_path, value}] -> {:ok, value}
-        [] -> {:error, :not_found}
-      end
-    rescue
-      # The named table only exists while the cache process owns it. A missing
-      # table means the cache is down, which is not the same answer as "this key
-      # is not cached" -- callers must be able to tell them apart.
-      ArgumentError -> {:error, :cache_unavailable}
+    case :ets.lookup(@table_name, key_path) do
+      [{^key_path, value}] -> {:ok, value}
+      [] -> {:error, :not_found}
     end
+  rescue
+    # The named table only exists while the cache process owns it. A missing
+    # table means the cache is down, which is not the same answer as "this key
+    # is not cached" -- callers must be able to tell them apart.
+    ArgumentError -> {:error, :cache_unavailable}
   end
 
   @doc """
@@ -130,7 +128,7 @@ defmodule Arca.Config.Cache do
     all_keys =
       :ets.tab2list(@table_name)
       |> Enum.map(fn {k, _v} -> k end)
-      |> Enum.filter(fn k -> is_prefix?(key_path, k) end)
+      |> Enum.filter(fn k -> prefix?(key_path, k) end)
 
     # Delete all keys that have this key_path as prefix
     Enum.each(all_keys, fn k -> :ets.delete(@table_name, k) end)
@@ -140,7 +138,7 @@ defmodule Arca.Config.Cache do
 
   # Private functions
 
-  defp is_prefix?(prefix, list) do
+  defp prefix?(prefix, list) do
     prefix_size = length(prefix)
 
     with true <- length(list) >= prefix_size,

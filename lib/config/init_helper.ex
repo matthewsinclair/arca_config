@@ -6,8 +6,8 @@ defmodule Arca.Config.InitHelper do
   exist before the Arca.Config system attempts to load them.
   """
 
-  alias Arca.Config.FileWatcher
   alias Arca.Config.Cfg
+  alias Arca.Config.FileWatcher
 
   @doc """
   Initializes the configuration for an application.

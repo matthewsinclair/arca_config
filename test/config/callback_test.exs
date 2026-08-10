@@ -101,6 +101,7 @@ defmodule Arca.Config.CallbackTest do
       # arity check (the is_function(_, 0) guard makes the inferred param type
       # (-> term())); we are exercising the runtime FunctionClauseError here.
       assert_raise FunctionClauseError, fn ->
+        # credo:disable-for-next-line Credo.Check.Refactor.Apply
         apply(Config, :add_callback, [fn _arg -> :ok end])
       end
     end

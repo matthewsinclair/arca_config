@@ -99,9 +99,8 @@ defmodule Arca.Config.FileWatcher do
 
     # Only create directories/files if explicitly requested
     if create_if_missing do
-      with :ok <- ensure_directory_exists(config_dir),
-           :ok <- ensure_file_exists(config_file, initial_config) do
-        :ok
+      with :ok <- ensure_directory_exists(config_dir) do
+        ensure_file_exists(config_file, initial_config)
       end
     else
       # Skip file creation if not requested
@@ -291,15 +290,15 @@ defmodule Arca.Config.FileWatcher do
   end
 
   defp ensure_file_exists(file_path, initial_config) do
-    if !File.exists?(file_path) do
+    if File.exists?(file_path) do
+      :ok
+    else
       content = Jason.encode!(initial_config, pretty: true)
 
       case File.write(file_path, content) do
         :ok -> :ok
         {:error, reason} -> {:error, "Failed to create config file: #{reason}"}
       end
-    else
-      :ok
     end
   end
 end

@@ -142,9 +142,9 @@ defmodule Arca.Config do
 
   alias Arca.Config.Cfg
   alias Arca.Config.CLI
-  alias Arca.Config.Value
   alias Arca.Config.Server
   alias Arca.Config.Supervisor, as: ConfigSupervisor
+  alias Arca.Config.Value
 
   @doc """
   Handle Application functionality to start the Arca.Config subsystem.
@@ -518,7 +518,7 @@ defmodule Arca.Config do
       {:ok, :notified}
   """
   @spec notify_callbacks() :: {:ok, :notified}
-  def notify_callbacks(), do: Server.notify_callbacks()
+  def notify_callbacks, do: Server.notify_callbacks()
 
   @doc """
   Switches the configuration file location at runtime.

@@ -104,7 +104,7 @@ defmodule Arca.Config.PhaseBasedTest do
     end)
 
     # Create test config file with unique name to avoid conflicts
-    test_id = :rand.uniform(10000)
+    test_id = :rand.uniform(10_000)
     test_path = Path.join(System.tmp_dir!(), "arca_phase_test_#{test_id}")
     File.mkdir_p!(test_path)
     test_file = "config.json"

@@ -896,22 +896,23 @@ defmodule Arca.Config.Server do
     :ok
   end
 
-  defp flatten_and_cache(config, prefix \\ []) do
-    if is_map(config) do
-      # Cache this level
-      if prefix != [] do
-        Cache.put(prefix, config)
-      end
+  defp flatten_and_cache(config, prefix \\ [])
 
-      # Recursively cache all nested values
-      Enum.each(config, fn {key, value} ->
-        new_prefix = prefix ++ [key]
-        Cache.put(new_prefix, value)
+  defp flatten_and_cache(config, prefix) when is_map(config) do
+    # Cache this level. The root has no prefix and is not a cacheable key.
+    if prefix != [], do: Cache.put(prefix, config)
 
-        if is_map(value) do
-          flatten_and_cache(value, new_prefix)
-        end
-      end)
-    end
+    Enum.each(config, &cache_entry(&1, prefix))
+  end
+
+  # A leaf: cached by its parent, nothing to descend into. The guard clause
+  # above is what used to be `if is_map(value)` at the recursion site, moved
+  # to where the decision belongs.
+  defp flatten_and_cache(_config, _prefix), do: :ok
+
+  defp cache_entry({key, value}, prefix) do
+    new_prefix = prefix ++ [key]
+    Cache.put(new_prefix, value)
+    flatten_and_cache(value, new_prefix)
   end
 end
