@@ -100,7 +100,7 @@ mix arca.config list
 mix arca.config watch database.host
 ```
 
-`./scripts/cli` is a local wrapper around the same task that also loads this repository's own `config/.env` first; it is a convenience for working *on* arca_config, not part of the library's interface.
+`bin/ac cli` runs the same task through this repository's dev launcher; it is a convenience for working *on* arca_config, not part of the library's interface. It replaced `./scripts/cli`, which also claimed to load `config/.env` first -- it did, redundantly, because `config/dotenv.exs` already does it during config evaluation (see Environment Variables below). The launcher does not repeat it.
 
 A value is stored as what it denotes: `true` and `false` become booleans, digits become numbers, and a JSON object or array is decoded. Anything else is stored as the string you typed. There is no longer an escript build target -- it was undocumented and unbuilt, and the mix task is the path that was actually in use.
 
@@ -139,22 +139,27 @@ For the record, since the file used to be advertised here as something it is not
 
 ## Development
 
-```bash
-# Run tests
-./scripts/test
-
-# Run IEx with the project loaded
-./scripts/iex
-
-# Use the CLI
-./scripts/cli
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc):
+This repository uses [devbin](https://github.com/matthewsinclair/devbin) as its dev launcher. `bin/ac` is the short alias for `bin/arca_config`; `bin/ac help` lists everything it offers and `bin/ac help --why` also says what it does not offer, and why.
 
 ```bash
-mix docs
+# Run the gates -- ExUnit at CI's strictness, then credo
+bin/ac test all
+
+# Read-only checks: compile, format, deps, critic
+bin/ac check all
+
+# IEx with the project loaded
+bin/ac iex
+
+# Use the CLI, plain or inside IEx
+bin/ac cli
+bin/ac cli --iex
+
+# API documentation, via ExDoc
+bin/ac docs exdoc
 ```
+
+Every gate seals its verdict to a file under `tmp/`: an empty `.errors` file is a completed green run, so a gate that examined nothing cannot report success. The commands above replaced `./scripts/{test,iex,cli}`, which are gone.
 
 ## License
 

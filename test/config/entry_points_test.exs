@@ -12,7 +12,7 @@ defmodule Arca.Config.EntryPointsTest do
 
   # Written after the CI coverage gate surfaced what it surfaced. `mix
   # arca.config` measured **0%**: ruling R3 chose extract over delete precisely
-  # because the mix task is the documented CLI path -- the one `scripts/cli`
+  # because the mix task is the documented CLI path -- the one `bin/ac cli`
   # invokes and the one the README now tells people to use -- and nothing
   # exercised it. `Arca.Config.InitHelper` was the next thinnest at 58%, and it
   # is the module a consumer calls to create its configuration in the first
