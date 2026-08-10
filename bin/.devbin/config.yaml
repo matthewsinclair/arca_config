@@ -65,10 +65,18 @@ commands:
     # defaults-not-overrides precedence and tolerance for a missing file. The
     # shell-level loading in all three retired scripts was redundant with it.
     #
-    # `scripts/iex` folds in here rather than becoming its own command: it ran
-    # `iex -S mix Arca.Config`, and mix resolves both `Arca.Config` and
-    # `arca.config` to Mix.Tasks.Arca.Config, so it was this command in IEx.
-    # That is the framework's own `--iex` option (D20): `bin/ac cli --iex`.
+    # `scripts/iex` does NOT fold in here. It was recorded that way first --
+    # "this command in IEx, via the framework's `--iex` (D20)" -- on the strength
+    # of `mix Arca.Config` and `mix arca.config` resolving to the same module.
+    # They do, and that was the wrong half to check. `--iex` is read by exactly
+    # one thing in devbin, the builtin `server` handler, which is disabled here;
+    # for a declared `run:` nothing reads it at all, so `bin/ac cli --iex` is
+    # parsed, exported and ignored. Proven with a poisoned `iex` first on PATH:
+    # never fired for `cli --iex`, fired immediately for `bin/ac iex`.
+    #
+    # What replaced scripts/iex is the builtin `iex` command (`iex -S mix`),
+    # which is offered and live. See bin/.devbin/help/iex.md for the delta, and
+    # Devbin issue 0009 for why the flag is offered where nothing can read it.
     run: mix arca.config
 
   check:
