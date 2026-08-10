@@ -1,0 +1,10 @@
+# The vendored devbin runtime is not this project's to format (Devbin issue
+# 0008): a formatting hook that rewrites bin/.devbin/lib/ does so inside an
+# install/upgrade commit and breaks the vendored manifest one doctor later.
+#
+# This project's pre-commit hook chains to Intent's critic gate and stops -- it
+# has no prettier pass -- so the fence is insurance here rather than
+# load-bearing at commit time. It still lands: a hand `prettier --write` or an
+# editor plugin is the other blast radius, and the guarantee should not depend
+# on the hook staying the shape it is today.
+bin/.devbin/lib/
