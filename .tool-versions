@@ -8,7 +8,7 @@
 # It has two real consumers, and between them this is the ONE home for the
 # toolchain this library is DEVELOPED on:
 #
-#   - `bin/ac check toolchain`, which compares these pins against the running
+#   - `bin/acfg check toolchain`, which compares these pins against the running
 #     toolchain and fails when they diverge.
 #   - CI (.github/workflows/ci.yml), whose matrix carries a top cell meaning
 #     "the version we develop on". GitHub expands a matrix before any step

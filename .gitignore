@@ -4,7 +4,7 @@
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
 
-# ex_doc output. `bin/ac docs exdoc` writes it; it is generated from the source
+# ex_doc output. `bin/acfg docs exdoc` writes it; it is generated from the source
 # on demand and never committed. Left untracked-and-unignored it dirties the
 # tree after every docs build, which trains everyone to ignore a dirty tree.
 /doc/

@@ -2,7 +2,7 @@ defmodule Arca.Config.CLI do
   @moduledoc """
   Command-line interface for Arca Config.
 
-  Reached through `mix arca.config`, which is what `bin/ac cli` invokes. It used
+  Reached through `mix arca.config`, which is what `bin/acfg cli` invokes. It used
   to live inside `Arca.Config` alongside the Application callback and the API
   facade, and it dispatched twice: a hand-written `case` on `argv` intercepted
   `get`, `set`, `list` and `watch` before Optimus ever saw them, which left the

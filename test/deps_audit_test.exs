@@ -30,7 +30,7 @@ defmodule Arca.Config.DepsAuditTest do
       "no in-repo call site -- kept per AC-05.1 default-KEEP, pending downstream evidence",
     ex_doc: "dev only: documentation build",
     dotenv: "dev and test only, runtime: false -- declared; config/dotenv.exs hand-parses .env",
-    credo: "dev and test only, runtime: false -- static analysis, gated by `bin/ac test credo`"
+    credo: "dev and test only, runtime: false -- static analysis, gated by `bin/acfg test credo`"
   }
 
   # Read the declared set from mix.exs textually. Evaluating mix.exs inside the
