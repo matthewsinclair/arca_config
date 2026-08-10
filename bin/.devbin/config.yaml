@@ -1,13 +1,119 @@
 # arca_config -- devbin configuration.
 #
-# Written by: devbin install. Every key, annotated, is vendored beside this
-# file at bin/.devbin/lib/config.reference.yaml.
+# Written by devbin install, filled in by ST0002 WP-02. Every key, annotated,
+# is vendored beside this file at bin/.devbin/lib/config.reference.yaml.
+#
+# Every entry below is DERIVED from the launcher this replaces -- the three
+# scripts under scripts/ -- via the inventory at
+# intent/st/ST0002/WP/02/arca_config-inventory.md in the Devbin repo. Where the
+# catalogue default already matches, there is deliberately NO entry here:
+# config carries the differences, not a second copy of the catalogue.
 
 project:
   name: arca_config
   alias: ac
+
+  # Gate scope, not project composition. Intent declares [shell, elixir] and
+  # that is right for critics; the only shell in this tree is Intent's own hook
+  # scripts and the scripts/ launcher being retired, neither of which has a
+  # devbin gate to run.
   languages:
     - elixir
 
+  # mix.exs is the one version home -- no VERSION file, no sidecars.
+  version_from: mix.exs
+
 # The devbin this project expects. Enforced by: devbin doctor
 devbin_version: "^0.1.0"
+
+help:
+  tagline: "dev launcher for arca_config -- the configuration library the Arca tools share"
+
+docs:
+  # `docs treeindex` refuses the project root and requires a list.
+  treeindex_dirs:
+    - lib
+    - test
+
+commands:
+  server:
+    # No Phoenix and nothing to serve.
+    enabled: false
+
+  repl:
+    # The builtin runs `mix <name>.cli repl`; this project's CLI task has no
+    # repl subcommand, and scripts/ never had one either (arca_cli does).
+    enabled: false
+
+  db:
+    # No Ecto, no repo, no database.
+    enabled: false
+
+  build:
+    # A library: `mix compile` is the build, and `check compile` already gates
+    # it under --warnings-as-errors. A second name for the same work is the
+    # Highlander breach.
+    enabled: false
+
+  cli:
+    # scripts/cli. The builtin runs `mix <DEVBIN_NAME>.cli`, which here would be
+    # `mix arca_config.cli` -- this project's task is `arca.config`, declared via
+    # mix_tasks: in mix.exs and implemented at lib/mix/tasks/arca_config.ex.
+    #
+    # No .env preamble: config/dotenv.exs already loads config/.env during mix
+    # configuration evaluation, on every dev and test invocation, with
+    # defaults-not-overrides precedence and tolerance for a missing file. The
+    # shell-level loading in all three retired scripts was redundant with it.
+    #
+    # `scripts/iex` folds in here rather than becoming its own command: it ran
+    # `iex -S mix Arca.Config`, and mix resolves both `Arca.Config` and
+    # `arca.config` to Mix.Tasks.Arca.Config, so it was this command in IEx.
+    # That is the framework's own `--iex` option (D20): `bin/ac cli --iex`.
+    run: mix arca.config
+
+  check:
+    options:
+      toolchain:
+        # OFF, and this is the one place this project departs from the fleet.
+        #
+        # The toolchain fact already has a home: .github/workflows/ci.yml runs a
+        # three-cell matrix (OTP 27/1.18.0, 28/1.18.4, 29/1.20.2) whose header
+        # records WHY the top cell exists -- without it "CI was green on 1.18
+        # while every local run used 1.20". A .tool-versions here would be a
+        # SECOND home for that fact, hand-kept in step with the matrix, and it
+        # would not even agree: the matrix tops out at 1.20.2 and this machine
+        # runs 1.20.3.
+        #
+        # hv's call, 2026-08-10. This is NOT the MicroGPTEx answer: there the
+        # project had no CI and no other home, so the pin file was the one home
+        # and the arm is live. Read where the fact already lives before adding
+        # a place for it.
+        enabled: false
+
+  test:
+    options:
+      mix:
+        # scripts/test ran `mix test --trace`. CI runs `mix test
+        # --warnings-as-errors`, and CI's comment says why: plain `mix compile`
+        # only compiles lib/, so warnings in test/ went unreported. The
+        # catalogue's bare `mix test` would make this gate check LESS than the
+        # gate beside it, which is the failure mode that passes every
+        # comparison you would think to make.
+        #
+        # --trace is output verbosity rather than strictness, and devbin passes
+        # trailing argv through, so `bin/ac test mix --trace` still works.
+        summary: ExUnit, at CI's strictness
+        run: mix test --warnings-as-errors
+        grammar: mix
+        log: MIX
+
+  docs:
+    options:
+      exdoc:
+        # A published library, so the API docs ARE a deliverable. ex_doc is
+        # already a dev dependency and nothing was driving it.
+        summary: "Build the API documentation with ex_doc"
+        run: mix docs
+        grammar: generic
+        log: EXDOC
+        in_all: false
