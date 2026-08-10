@@ -1,0 +1,35 @@
+# Tool versions for arca_config -- a DECLARATION, not a mechanism.
+#
+# Nothing on a developer machine is obliged to obey this file. Erlang and Elixir
+# are homebrew-provided here; no version manager is in use (the filename is an
+# asdf/mise convention, and both will read it if you happen to run one -- but
+# the project does not depend on either).
+#
+# It has two real consumers, and between them this is the ONE home for the
+# toolchain this library is DEVELOPED on:
+#
+#   - `bin/ac check toolchain`, which compares these pins against the running
+#     toolchain and fails when they diverge.
+#   - CI (.github/workflows/ci.yml), whose matrix carries a top cell meaning
+#     "the version we develop on". GitHub expands a matrix before any step
+#     runs, so that cell cannot read this file directly -- instead CI asserts
+#     the two agree and hard-fails if they do not. The copy exists because the
+#     platform requires a literal; the guard is what keeps it from drifting.
+#
+# THE MATRIX AND THIS FILE ANSWER DIFFERENT QUESTIONS. The lower cells are
+# compatibility coverage -- the older OTP/Elixir pairs a published library still
+# supports, floored at the `~> 1.18` mix.exs requires. This file is the single
+# version everything here is actually built and run against. Two facts, two
+# homes, neither a copy of the other.
+#
+# Policy (hv, 2026-07-28, restated 2026-08-10): run the latest, and keep this
+# file matching what you actually run. This project had NO pin file until today
+# and the matrix's top cell said 1.20.2 while every local run used 1.20.3 --
+# a cell whose own comment claimed it tracked local, quietly not doing so.
+#
+# These are the fleet's pins: identical to Conflab, Laksa, Baize, Lamplight,
+# MicroGPTEx and arca_cli.
+#
+# Lines are parsed as `^<tool> <version>` -- keep comments free-form above them.
+erlang 29.0.5
+elixir 1.20.3-otp-29

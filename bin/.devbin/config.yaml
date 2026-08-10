@@ -79,24 +79,23 @@ commands:
     # Devbin issue 0009 for why the flag is offered where nothing can read it.
     run: mix arca.config
 
-  check:
-    options:
-      toolchain:
-        # OFF, and this is the one place this project departs from the fleet.
-        #
-        # The toolchain fact already has a home: .github/workflows/ci.yml runs a
-        # three-cell matrix (OTP 27/1.18.0, 28/1.18.4, 29/1.20.2) whose header
-        # records WHY the top cell exists -- without it "CI was green on 1.18
-        # while every local run used 1.20". A .tool-versions here would be a
-        # SECOND home for that fact, hand-kept in step with the matrix, and it
-        # would not even agree: the matrix tops out at 1.20.2 and this machine
-        # runs 1.20.3.
-        #
-        # hv's call, 2026-08-10. This is NOT the MicroGPTEx answer: there the
-        # project had no CI and no other home, so the pin file was the one home
-        # and the arm is live. Read where the fact already lives before adding
-        # a place for it.
-        enabled: false
+  # `check toolchain` is LIVE, like every other project in both fleets. There is
+  # deliberately no entry for it.
+  #
+  # It was `enabled: false` for a few hours on 2026-08-10, reasoned as "the CI
+  # matrix is already the home for this fact, so a pin file would be a second
+  # one". That reasoning was wrong twice over, and hv reversed it the same day.
+  #
+  # Wrong on the facts: the matrix's own top cell said 1.20.2 while every local
+  # run used 1.20.3, so the fact it supposedly owned had already drifted and
+  # nothing was watching. Wrong on the policy: hv's standing rule, written into
+  # Baize's .tool-versions on 2026-07-28, is "run the latest, and keep this file
+  # matching what you actually run" -- fleet-wide, not per-project.
+  #
+  # The two are different facts and now have one home each: .tool-versions is
+  # the version this library is DEVELOPED on, the matrix's lower cells are the
+  # older pairs it still SUPPORTS, and CI hard-fails if the top cell drifts from
+  # the pin file.
 
   test:
     options:

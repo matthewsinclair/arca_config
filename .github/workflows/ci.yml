@@ -8,6 +8,18 @@ name: CI
 # The matrix floors at Elixir 1.18, which is what mix.exs requires, and tops out
 # at the toolchain this library is actually developed on. Without that top cell,
 # CI was green on 1.18 while every local run used 1.20.
+#
+# THAT TOP CELL IS NOW GUARDED, because it had already drifted from the thing it
+# claims to track: it said 1.20.2 while every local run used 1.20.3, so the
+# comment above was true of the intent and false of the file. `.tool-versions`
+# is now the ONE home for "the version this library is developed on", and the
+# `Toolchain pin agrees with .tool-versions` step below hard-fails when the top
+# cell disagrees with it.
+#
+# The copy exists only because GitHub expands a matrix before any step runs, so
+# the cell cannot read the file. The guard is what makes the copy honest, and
+# the two facts stay distinct: the lower cells are the older pairs a published
+# library still supports, the top cell mirrors what we actually build on.
 
 on:
   push:
@@ -32,11 +44,32 @@ jobs:
           - otp: '28.0'
             elixir: '1.18.4'
           - otp: '29.0'
-            elixir: '1.20.2'
+            elixir: '1.20.3'
+            tracks_pin: true
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Only the cell that CLAIMS to track local is checked against the pin
+      # file; the compatibility cells are deliberately older and must not be.
+      # Without this the top cell is an unguarded second copy of the fact, which
+      # is how it reached 1.20.2 while the machine ran 1.20.3.
+      - name: Toolchain pin agrees with .tool-versions
+        if: matrix.tracks_pin
+        run: |
+          if [ ! -f .tool-versions ]; then
+            echo "::error::.tool-versions is missing -- it is the home of the developed-on pin." >&2
+            exit 1
+          fi
+          want_elixir="$(grep -h '^elixir ' .tool-versions | awk '{ print $2 }' | awk -F - '{print $1}')"
+          want_otp="$(grep -h '^erlang ' .tool-versions | awk '{ print $2 }')"
+          # The matrix names OTP as major.minor ('29.0'); the pin file carries
+          # the patch too ('29.0.5'), so compare on major.minor.
+          if [ "$want_elixir" != "${{ matrix.elixir }}" ] || [ "${want_otp%.*}" != "${{ matrix.otp }}" ]; then
+            echo "::error::matrix top cell (${{ matrix.otp }}/${{ matrix.elixir }}) has drifted from .tool-versions ($want_otp/$want_elixir)." >&2
+            exit 1
+          fi
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
