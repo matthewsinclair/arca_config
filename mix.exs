@@ -53,7 +53,10 @@ defmodule ArcaConfig.MixProject do
       {:pathex, "~> 2.6"},
       {:table_rex, "~> 4.1"},
       {:elixir_uuid, "~> 1.2"},
-      {:dotenv, "~> 3.0", only: [:dev, :test], runtime: false}
+      {:dotenv, "~> 3.0", only: [:dev, :test], runtime: false},
+      # Static analysis. dev/test only and runtime: false, so nothing about the
+      # published surface moves -- a consumer never resolves this.
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 end
