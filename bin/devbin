@@ -61,9 +61,82 @@ export BIN_DIR PROJECT_ROOT DEVBIN_DIR DEVBIN_LIB
 [ -f "$DEVBIN_DIR/config.yaml" ] || die "no config at $DEVBIN_DIR/config.yaml (try: devbin install)"
 cfg_load "$DEVBIN_DIR/config.yaml" || exit 1
 
+# THE REFERENT (issue 0049, consumer-filed). `project.referent` names a command
+# the PROJECT owns; devbin runs it once, here, and exports its stdout for
+# `print_run_referent` to echo beside every verdict. Declare nothing and nothing
+# changes -- which is every consumer that has not asked for this.
+#
+# WHY A DECLARED COMMAND RATHER THAN A VARIABLE THE PROJECT SETS. There is no
+# earlier project-owned place to set one: this file is DEVBIN'S, and a consumer
+# that edits it to export a variable has forked the dispatcher in order to add a
+# feature. That is not hypothetical -- it is what the consumer who raised this
+# did, and their own manifest check caught it inside the hour, on a file they had
+# checked the ownership of and then edited a different one. `config.yaml` and
+# `cmd/` belong to the project, so a command named in config and living in `cmd/`
+# is entirely theirs and the vendored tree stays stock.
+#
+# DEVBIN STILL NEVER PARSES THE STRING. It learns that the project HAS a command
+# naming its referent; it does not learn what a referent is. `git rev-parse` is
+# one project's answer, and devbin must remain unable to tell that answer from a
+# build id or a hostname -- see print_run_referent for why that is the design and
+# not a preference.
+#
+# COMPOSED AT PROCESS START, which is run start for every gate this invocation
+# goes on to run. Read later it would describe the tree the verdict was PRINTED
+# against rather than the one measured, and those diverge in exactly the
+# situation this exists for.
+#
+# ABSENT IS NOT CLEAN, so a declared-but-failing composer is LOUD rather than
+# empty: empty is indistinguishable from a project that never declared one, so a
+# broken composer would silently restore the unreferenced verdict this closes.
+# Fail-open on the run -- a referent must never be able to stop a gate.
+#
+# YES, THIS IS AN `eval`, AND IT IS A DECISION RATHER THAN AN OVERSIGHT. devbin
+# executes a string the project wrote, which is the class the consumer who raised
+# this had already eliminated from its own config reader. What makes it sound is
+# the SOURCE and not the string: config.yaml is project-owned committed source,
+# exactly as trusted as `cmd/`, and anyone who can write this key can already
+# write `cmd/anything` and name it from a `run:` line. There is no privilege here
+# to escalate to.
+#
+# `eval` rather than `run:`'s word-split because a referent is a VALUE COMPOSER
+# and a pipeline is its natural spelling. `run:` refuses eval for a reason that
+# does not reach this line: a gate command line needing real quoting needs a
+# handler, so the gate stays legible. A one-shot substitution has no verdict to
+# keep legible.
+#
+# THE LINE THIS MUST NEVER CROSS IS THE ONE ABOVE: eval-ing the COMMAND is not
+# parsing the ANSWER. The moment devbin can tell a sha from a hostname, the layer
+# ruling has been reversed by implementation rather than by decision, and nothing
+# in a diff would say so.
+_devbin_referent_cmd="$(cfg_get project.referent "")"
+if [ -n "$_devbin_referent_cmd" ]; then
+  DEVBIN_RUN_REFERENT="$(cd "$PROJECT_ROOT" && eval "$_devbin_referent_cmd" 2>/dev/null)" ||
+    DEVBIN_RUN_REFERENT=""
+  [ -n "$DEVBIN_RUN_REFERENT" ] ||
+    DEVBIN_RUN_REFERENT="REFERENT UNAVAILABLE -- 'project.referent' is declared and did not answer"
+  export DEVBIN_RUN_REFERENT
+fi
+unset _devbin_referent_cmd
+
 # Identity comes from config, never from $0. That is what lets bin/conflab and
 # bin/cf both be symlinks to this file while `conflab -v` still says conflab.
 DEVBIN_NAME="$(cfg_get project.name devbin)"
+# The mix task the `cli` and `repl` built-ins call, defaulting to the
+# derivation that held for the whole first fleet. The Arca pair is why it is
+# configurable at all: arca_config's task is `arca.config` and arca_cli's is
+# `arca.cli`, so `<name>.cli` names a task neither project has.
+#
+# EXPORTED rather than looked up, because lib/helpers reads no config by rule
+# (D15) and a handler is a separate process -- the same reason DEVBIN_NAME
+# crosses this way. One derivation, here, read by both built-ins.
+#
+# `cli` alone could have used a `run:` override, which is what arca_config did.
+# `repl` could not: its built-in carries the rlwrap wiring, and overriding the
+# whole command line to change one word throws away history and completion. A
+# difference of one NAME should not cost a project the handler.
+DEVBIN_CLI_TASK="$(cfg_get project.cli_task "$DEVBIN_NAME.cli")"
+export DEVBIN_CLI_TASK
 PROJECT_ROOT_VAR="$(cfg_get project.root_var)"
 if [ -z "$PROJECT_ROOT_VAR" ]; then
   PROJECT_ROOT_VAR="$(upper_snake "$DEVBIN_NAME")_ROOT"
@@ -191,7 +264,7 @@ esac
 # project, forty-odd across the four. Handlers are separate processes, so the
 # exports reach them anyway and none of them needs to parse again; what a
 # handler receives on its command line is only what devbin did not recognise.
-parse_common_opts "$@"
+parse_common_opts "$command" "$@"
 # Guarded expansion: an empty array under `set -u` aborts on bash 3.2, the
 # /bin/bash on every Mac (design D9). See parse_common_opts in lib/resolve.
 set -- "${DEVBIN_ARGS[@]+"${DEVBIN_ARGS[@]}"}"

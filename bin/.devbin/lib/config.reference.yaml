@@ -23,9 +23,45 @@ project:
   # Optional. Short symlink alias installed beside bin/devbin (bin/cf).
   alias: cf
 
+  # Optional. The mix task the `cli` and `repl` built-ins call.
+  # Default: <name>.cli -- `mix conflab.cli`, which is what the whole first
+  # fleet uses.
+  #
+  # Set it where the task is not named after the project. Arca's are the
+  # reference cases: arca_cli declares `Mix.Tasks.Arca.Cli` (`mix arca.cli`)
+  # and arca_config declares `mix arca.config`, so the default would name a
+  # task neither project has.
+  #
+  # `cli` alone could be handled with `commands.cli.run:`, and this key exists
+  # because `repl` cannot: its built-in carries the rlwrap history and
+  # completions wiring, and overriding the command line to change one word
+  # throws that away. A difference of one NAME should not cost a project the
+  # handler.
+  cli_task: conflab.cli
+
   # Optional. Environment variable carrying the project root, exported for
   # handlers. Default: <NAME>_ROOT, upper-cased.
   root_var: CONFLAB_ROOT
+
+  # Optional. A COMMAND devbin runs once per invocation, whose stdout it prints
+  # verbatim beneath every verdict as `measured: <answer>`.
+  #
+  # THE ANSWER IS OPAQUE AND STAYS OPAQUE. devbin evals the command and never
+  # parses what comes back -- it cannot tell a sha from a hostname from a
+  # timestamp, and that is the point. The project knows what identifies one of
+  # its runs; devbin knows only that a reader needs to see it. **The moment
+  # devbin could interpret the answer, this layer split would have been reversed
+  # by implementation rather than by decision, and no diff would say so.**
+  #
+  # WHY IT EXISTS: a human reading `FAILED: rust` in a summary had no way to know
+  # which tree it described. Every verdict now carries the project's own answer
+  # to "what was measured".
+  #
+  # Declared and unanswering is LOUD, never silent: a command that fails or
+  # prints nothing yields `REFERENT UNAVAILABLE -- 'project.referent' is declared
+  # and did not answer`, because a declared referent that quietly vanishes leaves
+  # the verdict looking unlabelled rather than broken.
+  referent: bin/.devbin/cmd/measured --value
 
   # Optional. Where the project version is read from. Default: VERSION.
   #
@@ -73,12 +109,27 @@ project:
   # switched off by hand, and a built-in added to devbin later cannot appear
   # uninvited in a project whose language it does not match.
   #
-  # Same axis as Intent's own intent/.config/config.json `languages`. Keeping
-  # the two in step is a person's job: devbin does not read Intent's config, and
-  # would need a JSON parser to do it, which is the dependency D7 exists to
-  # refuse. (This comment claimed `devbin doctor` reported the divergence, until
-  # WP-09 came to build doctor and found nothing had ever implemented it -- a
-  # documented check that does not run is the prose form of a false green.)
+  # NOT the same fact as Intent's own intent/.config/config.json `languages`,
+  # and the two are not meant to match. This key is GATE SCOPE -- what devbin
+  # should offer to run here. Intent's list is PROJECT COMPOSITION -- what the
+  # source is written in. Prolix is the reference case: it is an Elixir project
+  # with a real Swift app at native/ios, so Intent declares both while this key
+  # may declare elixir alone, because arming a gate is a decision and having a
+  # language is not. Mirroring either list into the other is the defect, not the
+  # divergence (ST0002 WP-04).
+  #
+  # One built-in reads INTENT's list rather than this one, deliberately:
+  # `check critic` (lib/cmd/check), because a critic reviews SOURCE and the
+  # rules belong to the language the source is written in. That is also the only
+  # place devbin needs jq, and it requires it by name at the point of use.
+  #
+  # (This comment previously claimed devbin never reads Intent's config at all,
+  # while `check critic` had been reading it with jq for as long as it existed;
+  # and before that it claimed `devbin doctor` reported the divergence, until
+  # WP-09 came to build doctor and found nothing had ever implemented it. Twice
+  # now this block has described a devbin that does not exist -- a documented
+  # check that does not run, and a documented abstinence that is not observed,
+  # are the same prose-shaped false green.)
   languages:
     - elixir
     - rust
@@ -186,6 +237,27 @@ options:
   iex:
     flag: true
     export: CONFLAB_IEX
+    # Optional, and ONLY meaningful for a framework-owned option (today that is
+    # `--iex` alone). Devbin owns `--iex` and knows its own consumer is the
+    # built-in `server`; it cannot know that a PROJECT handler reads
+    # DEVBIN_OPT_IEX too. Lamplight's `wrighter` does -- plain runs a launcher
+    # expression, `--iex` drops it for a bare shell -- so Lamplight names it:
+    #
+    #   options:
+    #     iex:
+    #       commands:
+    #         - wrighter
+    #
+    # Without the entry, `lamplight wrighter --iex` is REFUSED, because issue
+    # 0009 made a framework option that no offered command reads an error rather
+    # than a silent no-op. Adding a command here extends the set; it never
+    # replaces devbin's own.
+    #
+    # This key describes WHO READS the option, not what SHAPE it has. Declaring
+    # only `commands:` leaves `--iex` a flag; the four shape keys (flag, export,
+    # value, values) are what hand shape to config.
+    commands:
+      - wrighter
   json:
     flag: true
     value: json

@@ -49,6 +49,79 @@ _create_exclusive() {
   ) 2>/dev/null
 }
 
+# inflight_marker -- the single line `open_run_log` seeds a fresh `.errors` with.
+#
+# ONE HOME, because there are now two consumers and they are in different files:
+# `open_run_log` writes it, and `run_all`'s disagreement arm (lib/resolve) reads
+# it to tell "returned 0 without sealing a verdict" from "returned 0 while its
+# seal records a failure". Those send a reader to different places -- one to a
+# killed or timed-out gate, the other to a test that actually failed -- and one
+# message for two causes is how a guard gets ignored.
+#
+# A copy of this string in the reader would drift in exactly the silent
+# direction: reword the marker here and the reader classifies every UNSEALED run
+# as a sealed failure, which is a confident false statement about which of two
+# defects you have.
+inflight_marker() {
+  printf 'run in flight (or aborted before sealing) -- no completed verdict; see the .out log\n'
+}
+
+# seal_is_inflight <errors-path> -- true when this seal was never written, ie the
+# gate did not reach write_errors_file.
+#
+# `$(cat)` on both sides strips the trailing newline from each, so the comparison
+# does not depend on how either was written.
+seal_is_inflight() {
+  [ -f "$1" ] || return 1
+  [ "$(cat "$1")" = "$(inflight_marker)" ]
+}
+
+# seal_disagreement_reason <rc> <errors> -- WHY this run's return code and its
+# seal contradict each other, or NOTHING AT ALL when they agree.
+#
+# ONE HOME, TWO CALLERS, AND THE SECOND CALLER IS THE WHOLE POINT.
+# `seal_disagreements` reads the ledger, and the ledger is exported by `run_all`
+# and by nothing else -- so a check living only there sees `<cmd> all` and misses
+# every single-gate invocation. `print_run_verdict` runs on EVERY kept run. The
+# one instance of this class on record (issue 0015) was a single gate, which is
+# to say: on the path the ledger cannot see.
+#
+# THE STATE IS REACHABLE AND THAT WAS MEASURED RATHER THAN ASSUMED, because it
+# looks unconstructible and very nearly is. `write_errors_file` TRUNCATES the
+# seal whenever rc==0, so rc==0 beside a non-empty seal should be impossible.
+# It is not: when the truncation FAILS -- a read-only seal, a vanished directory
+# -- that function WARNS AND RETURNS 0, and the seal keeps what it already held,
+# which is the marker `open_run_log` seeded. Driven against an unwritable seal:
+# write_errors_file returned 0, the marker survived, the gate reported green.
+# The only thing standing between that and a believed verdict was a warn, AND A
+# NOTE CANNOT NOTICE. A check for an unreachable state would have been worse than
+# no check, so the probe came before the code.
+#
+# SILENCE MEANS THEY AGREE. Callers test for empty output rather than for a
+# status, so there is one obvious falsy value and no exit-code convention to
+# remember at two call sites.
+seal_disagreement_reason() {
+  local rc="$1" errors="${2:-}"
+  # A NON-ZERO rc IS NEVER A DISAGREEMENT. A red run is SUPPOSED to seal
+  # non-empty, and write_errors_file enforces exactly that ("RED IS NEVER
+  # EMPTY"). Only a claimed GREEN can be contradicted by its own artefact.
+  [ "$rc" = "0" ] || return 0
+  # Empty `errors` is the keep_log=0 spool path, where no companion is kept at
+  # all -- documented at open_run_log. So `--no-out` runs stay silent here by
+  # construction rather than by a second flag being threaded down.
+  [ -n "$errors" ] && [ -s "$errors" ] || return 0
+  # A NON-EMPTY SEAL IS NOT THE SAME AS A FAILURE. open_run_log SEEDS the file,
+  # so non-empty covers two states: a sealed failure, and a gate that never
+  # sealed at all. Same defect class -- the rc and the seal disagree -- but they
+  # send a reader to different places, and one message for both would send them
+  # hunting for a failing test that does not exist.
+  if seal_is_inflight "$errors"; then
+    printf 'returned 0 WITHOUT SEALING A VERDICT -- killed, timed out, or the seal could not be written\n'
+  else
+    printf 'returned 0 while its seal RECORDS A FAILURE\n'
+  fi
+}
+
 # open_run_log <keep_log 0|1> <out_dir> <suffix> -- set the `log` and `errors`
 # globals.
 #
@@ -70,6 +143,10 @@ _create_exclusive() {
 # trap.
 open_run_log() {
   local keep="$1" dir="$2" suffix="$3" stamp latest
+  # The wall clock for print_run_overhead. Set unconditionally and here, because
+  # this is the one point every gate passes through on its way to running -- a
+  # timer started anywhere else would measure a different span for each caller.
+  DEVBIN_RUN_T0="$(date +%s)"
   if [ "$keep" = 1 ]; then
     mkdir -p "$dir"
     stamp="$(date +%Y%m%d-%H%M)"
@@ -112,14 +189,50 @@ open_run_log() {
     [ -n "$log" ] || die "could not create a run log in $dir (200 candidate names taken)"
     printf '%s\n' "$log"
     errors="${log%.out}.errors"
-    printf 'run in flight (or aborted before sealing) -- no completed verdict; see the .out log\n' >"$errors"
+    inflight_marker >"$errors"
     # The convenience pointers must never sink a run: a failed ln warns, the
     # datestamped pair stays the record. tr keeps this bash-3.2 safe.
     latest="$dir/LATEST_$(printf '%s' "$suffix" | tr '[:lower:]' '[:upper:]')"
-    ln -sfn "$(basename "$log")" "$latest.out" ||
-      warn "could not refresh $latest.out -- the run log is unaffected"
-    ln -sfn "$(basename "$errors")" "$latest.errors" ||
-      warn "could not refresh $latest.errors -- the run log is unaffected"
+
+    # RUNLOG_WITNESS_RUN=1 -- WRITE THE RECORD, DO NOT CLAIM THE POINTER.
+    #
+    # `LATEST_<SUFFIX>` means "the newest DELIBERATE full run of this gate", and
+    # until now nothing enforced the word deliberate. Any invocation re-pointed
+    # it, including one made BY A TEST to prove that a gate can fail.
+    #
+    # THE MEASURED INSTANCE, and it is a standing one rather than a one-off. A
+    # consumer's suite drives its own crate gate twice from inside itself --
+    # once clean, once with the `#[ignore]`d failure witness -- so a GREEN run
+    # of that project seals both an empty RUST verdict and a deliberate red one,
+    # and repoints LATEST_RUST at whichever finished last. The mix suite is
+    # async, so it RACES the real crate run: measured over five consecutive
+    # evening gates, which one won alternated. `LATEST_RUST.errors` was a coin
+    # flip between the real verdict and a red that means "the witness worked".
+    #
+    # The witness is permanent by design -- a transient break on a shared tree
+    # is a misattribution waiting to happen -- so this is not an artefact to
+    # wait out. Every gate run produces one.
+    #
+    # WHAT IS AND IS NOT WITHHELD. The datestamped pair is written exactly as
+    # ever and `print_run_verdict` still names it, so the witness run remains
+    # fully quotable BY NAME -- which is the only way a seal should ever be
+    # quoted. What it does not do is answer the question "what is the state of
+    # this gate now", because it was never a run that asked it.
+    #
+    # A CONSEQUENCE WORTH STATING: an unpointed pair is not in
+    # `latest_pointer_keepset`, so a purge may reclaim it. That is correct.
+    # Retention protects the newest RUNLOG_KEEP_RUNS runs on its own terms; the
+    # pointer is not a retention mechanism and using it as one is what made the
+    # surviving seal definitionally the coin-flip target.
+    if [ "${RUNLOG_WITNESS_RUN:-}" = 1 ]; then
+      printf '%switness run: %s not re-pointed -- this run is not the gate'"'"'s current verdict%s\n' \
+        "${dim:-}" "$(basename "$latest").{out,errors}" "${reset:-}"
+    else
+      ln -sfn "$(basename "$log")" "$latest.out" ||
+        warn "could not refresh $latest.out -- the run log is unaffected"
+      ln -sfn "$(basename "$errors")" "$latest.errors" ||
+        warn "could not refresh $latest.errors -- the run log is unaffected"
+    fi
   else
     log="$(mktemp "${TMPDIR:-/tmp}/devbin-$suffix.XXXXXX")"
     errors=""
@@ -388,7 +501,10 @@ grammar_for() {
     xcodebuild | swift) printf '%s' "$_DEVBIN_GRAMMAR_XCODEBUILD" ;;
     lua) printf '%s' "$_DEVBIN_GRAMMAR_LUA" ;;
     shell | bats) printf '%s' "$_DEVBIN_GRAMMAR_SHELL" ;;
-    generic | "") printf '%s' "$_DEVBIN_GRAMMAR_GENERIC" ;;
+    # `critic` differs from `generic` ONLY in having a counter. Its findings are
+    # already rendered as blocks the generic extractor reads, so a second
+    # extraction grammar would be two implementations of one thing.
+    critic | generic | "") printf '%s' "$_DEVBIN_GRAMMAR_GENERIC" ;;
     *)
       warn "unknown grammar '$1' -- sealing with the generic grammar"
       printf '%s' "$_DEVBIN_GRAMMAR_GENERIC"
@@ -445,6 +561,47 @@ _DEVBIN_COUNT_MIX='
     s = substr($0, RSTART, RLENGTH); sub(/.*\//, "", s); sub(/ .*/, "", s); total += s + 0
   } else if (match($0, /[0-9]+ passed/)) {
     s = substr($0, RSTART, RLENGTH); sub(/ .*/, "", s); total += s + 0
+  }
+  next
+}
+END { if (seen) print total + 0 }
+'
+
+# `intent critic` reports what it EXAMINED, and both of its green forms are
+# countable -- which is the only reason this gate can be held to the same bar as
+# a test run.
+#
+# THE DEFECT THIS CLOSES. `check.critic` declared `grammar: generic`, generic has
+# no counter, and so the one promotion in this file that refuses a zero-exit run
+# which examined nothing could never apply to it. With no arguments the critic
+# defaults to --staged, and a CLEAN TREE is the normal state in which somebody
+# runs `check all` -- so the leg printed `ok`, scanned zero files, and was
+# structurally incapable of failing. Observed three separate times on a consumer
+# project before anyone wrote it down; the last observer had to say "passed
+# vacuously" by hand, because the gate would not say it.
+#
+# TWO FORMS, BOTH `exit 0`, both read off the critic's own source rather than off
+# one observed run: it prints `ok: no staged <lang> files to scan` (examined
+# nothing) and `ok: no <lang> findings at severity >= <sev> across <n> file(s)`.
+# A run WITH findings exits non-zero, so it never reaches the promotion, which is
+# guarded on rc==0.
+#
+# SUMMED ACROSS ARMS, because the critic gate runs one pass per declared language
+# into one log. A project declaring shell+elixir+rust with only elixir files
+# staged must NOT promote -- it examined something. Zero across every arm is the
+# empty run.
+#
+# `seen` is set by EITHER form, so a critic that printed neither -- a different
+# version, an error path, a tool that did not answer -- returns empty and is
+# never promoted. That is the safe direction this file already commits to: a
+# grammar with no counter is not evidence that nothing ran.
+# shellcheck disable=SC2016
+_DEVBIN_COUNT_CRITIC='
+/^ok: no staged .* files to scan$/ { seen = 1; next }
+/^ok: no .* findings at severity >= .* across [0-9]+ file\(s\)$/ {
+  seen = 1
+  if (match($0, /across [0-9]+ file/)) {
+    s = substr($0, RSTART + 7, RLENGTH - 12); total += s + 0
   }
   next
 }
@@ -534,13 +691,14 @@ count_for() {
     xcodebuild | swift) printf '%s' "$_DEVBIN_COUNT_XCODEBUILD" ;;
     credo) printf '%s' "$_DEVBIN_COUNT_CREDO" ;;
     shell | bats) printf '%s' "$_DEVBIN_COUNT_SHELL" ;;
+    critic) printf '%s' "$_DEVBIN_COUNT_CRITIC" ;;
     *) printf '' ;;
   esac
 }
 
 # grammar_names -- every grammar devbin ships, for help and doctor.
 grammar_names() {
-  printf '%s\n' mix credo cargo xcodebuild lua shell generic
+  printf '%s\n' mix credo cargo xcodebuild lua shell critic generic
 }
 
 # ============================================================================
@@ -586,6 +744,66 @@ KEEPSET
   return 1
 }
 
+# ============================================================================
+# RETENTION
+# ============================================================================
+
+# `--purge` meant "keep this run's pair and nothing else", so exactly one prior
+# run of each gate family survived on disk. That is the wrong default for the
+# one question these files exist to answer: AN INTERMITTENT FAILURE IS DIAGNOSED
+# BY DIFFING A RED RUN AGAINST THE GREEN ONE BEFORE IT, and purging the previous
+# run destroys the differential at the moment it becomes interesting. Bitten
+# three times in one project before it was boarded (2026-08-20).
+#
+# So purge keeps the newest RUNLOG_KEEP_RUNS run-pairs of the family rather than
+# one. RUNLOG_KEEP_RUNS=1 restores the old behaviour; 0 is REFUSED rather than
+# silently read as "keep everything", because a zero meaning "unlimited" is the
+# reading nobody expects from a variable named KEEP.
+#
+# Ordering is by MTIME, never by name -- same-minute collision files carry a -SS
+# suffix that sorts lexically BEFORE the plain stamp while being newer. That is
+# the same trap purge_only_run_logs documents, and the reason -nt is used here.
+
+# runlog_assert_keep_runs -- validate RUNLOG_KEEP_RUNS in the CALLER'S shell.
+#
+# SEPARATE FROM THE READ, AND THAT SPLIT IS THE WHOLE POINT. `die` inside a
+# `$(...)` kills only the subshell, so a validating reader used as
+# `want="$(runlog_keep_runs)"` prints its refusal, leaves `want` EMPTY, and the
+# purge then runs with NO retention at all -- deleting MORE on a bad setting
+# than on a good one. Measured on exactly that shape before it was split
+# (2026-08-20): RUNLOG_KEEP_RUNS=0 refused loudly and purged 16 of 18 files
+# anyway. Call the assert first, unsubstituted, then read the variable.
+runlog_assert_keep_runs() {
+  local n="${RUNLOG_KEEP_RUNS:-5}"
+  case "$n" in
+    '' | *[!0-9]*) die "RUNLOG_KEEP_RUNS must be a whole number, got '$n'" ;;
+    0) die "RUNLOG_KEEP_RUNS=0 would purge the run being kept; use 1 for keep-current-only" ;;
+  esac
+}
+
+# newest_run_stems <dir> <suffix> <n> -- print the stems of the newest <n> kept
+# runs of this family, one per line. Selection-sort by mtime rather than a sort
+# pipeline, because bash 3.2 has no mapfile and the candidate set is tiny.
+newest_run_stems() {
+  local dir="$1" suffix="$2" want="$3" f newest picked="" round=0
+  while [ "$round" -lt "$want" ]; do
+    newest=""
+    for f in "$dir"/*."$suffix".out; do
+      [ -L "$f" ] && continue
+      [ -f "$f" ] || continue
+      in_keepset "${f%.out}" "$picked" && continue
+      if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then
+        newest="$f"
+      fi
+    done
+    [ -n "$newest" ] || break
+    picked="$picked
+${newest%.out}"
+    round=$((round + 1))
+  done
+  printf '%s\n' "$picked" | grep -v '^$' || true
+}
+
 # purge_run_logs <dir> <suffix> <current_log> -- delete the PRIOR kept runs of
 # this gate family: every <stamp>.<suffix>.{out,errors} except the current run's
 # pair. Regular files only -- the LATEST_* symlinks never match the stamp
@@ -600,9 +818,12 @@ KEEPSET
 # -- so a run that FAILED reports success. Nothing downstream can detect it
 # after the fact, so the damage is un-caused here rather than caught later.
 purge_run_logs() {
-  local dir="$1" suffix="$2" current="$3" f purged=0 retained=0 keep
+  local dir="$1" suffix="$2" current="$3" f purged=0 retained=0 kept_recent=0 keep want recent
   local -a candidates=("$dir"/*."$suffix".out "$dir"/*."$suffix".errors)
   keep="$(latest_pointer_keepset "$dir" "$suffix")"
+  runlog_assert_keep_runs
+  want="${RUNLOG_KEEP_RUNS:-5}"
+  recent="$(newest_run_stems "$dir" "$suffix" "$want")"
   for f in "${candidates[@]}"; do
     [ -L "$f" ] && continue                       # never a LATEST_* pointer
     [ -f "$f" ] || continue                       # unmatched glob literal / vanished file
@@ -611,13 +832,24 @@ purge_run_logs() {
       retained=$((retained + 1))
       continue
     fi
+    # BOTH members of a retained run are kept: keeping an .out whose .errors was
+    # purged recreates the dangling-verdict hole this file exists to close.
+    if in_keepset "${f%.*}" "$recent"; then
+      kept_recent=$((kept_recent + 1))
+      continue
+    fi
     if rm -f "$f"; then
       purged=$((purged + 1))
     else
       warn "could not purge $f"
     fi
   done
-  printf '%spurged %s old run file(s) from %s%s\n' "${dim:-}" "$purged" "$dir" "${reset:-}"
+  printf '%spurged %s old run file(s) from %s (keeping the newest %s run(s))%s\n' \
+    "${dim:-}" "$purged" "$dir" "$want" "${reset:-}"
+  if [ "$kept_recent" -gt 0 ]; then
+    printf '%skept %s file(s) inside the RUNLOG_KEEP_RUNS=%s retention window%s\n' \
+      "${dim:-}" "$kept_recent" "$want" "${reset:-}"
+  fi
   if [ "$retained" -gt 0 ]; then
     printf '%sretained %s file(s) a LATEST_%s pointer still resolves to%s\n' \
       "${dim:-}" "$retained" "$(printf '%s' "$suffix" | tr '[:lower:]' '[:upper:]')" "${reset:-}"
@@ -667,6 +899,129 @@ warn_if_tee_failed() {
   return 0
 }
 
+# print_run_referent -- echo the opaque string the PROJECT handed us. Verbatim.
+#
+# THE ONE HOME for the referent line, called from `print_run_verdict` here and
+# from `run_all`'s summary in lib/resolve. Two sites, one spelling.
+#
+# WHY IT EXISTS. A leg's verdict is written as a claim about the project --
+# `FAILED: rust` -- but what it measured is one tree at one instant, and the run
+# pair records neither which tree that was nor whether it still exists. On a
+# quiescent checkout the distinction is empty. On a repository several people
+# edit at once it is not: the interval between the compiler reading a file and a
+# human reading the verdict routinely contains edits, and **a verdict that has
+# outlived its tree is indistinguishable, by inspection, from a verdict about
+# landed code.** The incident: a red leg escalated as a regression, about a tree
+# that had ceased to exist 41 seconds after the leg finished.
+#
+# IT PRINTS ON GREEN TOO, AND THAT IS THE HALF THAT EARNS IT. A red gets
+# investigated and self-corrects. A green certifying a tree nobody has is
+# believed and never revisited -- so the green path is where an unreferenced
+# verdict does its damage, and it is the path a reporter is always tempted to
+# keep quiet. Unadorned, no colour, no verdict word: a project that composes a
+# warning into its string gets a line that stands out by being UNUSUAL rather
+# than by shouting, which only works if the ordinary case is present and calm.
+#
+# ---------------------------------------------------------------------------
+# DEVBIN NEVER PARSES THIS STRING AND MUST NEVER LEARN TO. THAT IS THE DESIGN,
+# NOT A STYLE NOTE.
+# ---------------------------------------------------------------------------
+#
+# The project composes the value; devbin prints it and knows nothing about it.
+# `git rev-parse HEAD` plus a dirty count is one project's answer, and it is not
+# devbin's answer, because **devbin is not a git tool and must not become one.**
+# A generic gate runner has no business knowing what a commit is: consumers that
+# are not checkouts at all still get gates, and the moment this file can tell a
+# sha from a hostname, the layer boundary has been moved by implementation
+# rather than by a decision -- and nothing in a diff would say so.
+#
+# So the whole implementation is a presence test and a printf. There is
+# deliberately no validation, no trimming, no length cap and no format check:
+# every one of those would require knowing what the string is FOR. A project
+# that wants its referent checked checks it before exporting -- which is where
+# the knowledge lives, and where the consumer that raised this already does it.
+#
+# THAT LEAVES ONE THING THE CONSUMER OWNS AND SHOULD BE TOLD: freshness. devbin
+# prints whatever is in the variable at the moment it prints. Composing it at
+# run START describes what was measured; composing it at report time describes
+# the tree the verdict was formed against. Both are defensible, they are not the
+# same claim, and devbin cannot choose between them without parsing.
+print_run_referent() {
+  [ -n "${DEVBIN_RUN_REFERENT:-}" ] || return 0
+  printf 'measured: %s\n' "$DEVBIN_RUN_REFERENT"
+}
+
+# print_run_overhead <log> -- how much of this run was NOT the tests.
+#
+# TWO DURATIONS, NEITHER BANKABLE ALONE, DIVIDED, GIVE A MEASUREMENT THAT IS
+# (ic, 2026-08-19; the decomposition is theirs). A runner's own `finished in` is
+# a property of the ARTEFACT: it barely moves between machines. Wall-clock is a
+# property of the APPARATUS. **The ratio between them measures the apparatus, and
+# it needs no mechanism named** -- which is why it works where five successive
+# explanations of a slow estate did not.
+#
+# The measurement that produced it, on one project, same tests throughout:
+#
+#     8.51s tests / 11m 20s wall  =  80x     something is eating the machine
+#    11.87s tests / 22m 40s wall  = 115x     still eating it
+#     8.18s tests /  9.3s   wall  = 1.14x    quiet
+#
+# The summed term barely moved across all three. Only the ratio collapsed. Two
+# days and five wrong causes were spent on the wall-clock figure alone; the
+# ratio says "the apparatus is loud" without claiming to know why, and that is
+# the whole of its value.
+#
+# THREE LIMITS, ALL IN THE CODE RATHER THAN IN A NOTE, BECAUSE A READER MEETS
+# THE OUTPUT AND NEVER THE COMMENT.
+#
+#   1. It needs a runner that reports its own time. Where no recognised form
+#      appears this is SILENT -- no line beats a made-up denominator.
+#   2. It detects OVERHEAD, not slowness. A confound that slows the TESTS moves
+#      both terms and the ratio stays near 1. It is not a performance meter and
+#      must never be described as one.
+#   3. **It assumes wall ~= summed + overhead, which holds only while test
+#      binaries run SEQUENTIALLY.** Parallelise them and wall drops BELOW summed,
+#      and a ratio under 1 does not mean a quiet apparatus -- it means the model
+#      stopped applying. So sub-1 reports UNDEFINED, never a comfortable number.
+#      That gives the meter a free self-check: it detects its own obsolescence,
+#      and it announces it to the one person who will never read a note about a
+#      ratio -- whoever changed the runner underneath it.
+#
+# Granularity is whole seconds (`date +%s`; perl is not assumable -- see the
+# shasum note in lib/helpers). That is ample for a meter whose job is separating
+# 1x from 100x, and it is why very short runs are not reported.
+print_run_overhead() {
+  local log="${1:-}" wall parsed summed n
+  [ -n "${DEVBIN_RUN_T0:-}" ] || return 0
+  [ -f "$log" ] || return 0
+  wall=$(( $(date +%s) - DEVBIN_RUN_T0 ))
+  # Under 3s the integer clock cannot resolve a ratio worth printing.
+  [ "$wall" -ge 3 ] || return 0
+  # Both spellings the corpus actually emits: cargo's `finished in 0.12s` and
+  # ExUnit's `Finished in 1.2 seconds`. An unrecognised runner yields n=0.
+  parsed="$(awk '
+    {
+      if (match($0, /[Ff]inished in [0-9]+(\.[0-9]+)?/)) {
+        seg = substr($0, RSTART, RLENGTH)
+        sub(/[Ff]inished in /, "", seg)
+        s += seg + 0; n++
+      }
+    }
+    END { if (n > 0) printf "%.2f %d", s, n }
+  ' "$log" 2>/dev/null)"
+  [ -n "$parsed" ] || return 0
+  summed="${parsed%% *}"; n="${parsed##* }"
+  awk -v w="$wall" -v s="$summed" -v n="$n" '
+    BEGIN {
+      if (s <= 0) exit 0
+      if (w < s) {
+        printf "overhead: UNDEFINED -- wall %ds is BELOW the %ss the runner reports for %d suite(s), so the binaries are not running sequentially and this meter'"'"'s model does not hold.\n", w, s, n
+      } else {
+        printf "overhead: %.2fx -- %ds wall against %ss of reported test time across %d suite(s).\n", w / s, w, s, n
+      }
+    }'
+}
+
 # print_run_verdict <rc> <keep_log> <log> [errors] -- the end-of-run pointer
 # block, and the ONE home for it.
 #
@@ -689,9 +1044,19 @@ warn_if_tee_failed() {
 # colours as `${red:-}` so it survives `set -u` when init_colors was never
 # called.
 print_run_verdict() {
-  local rc="$1" keep="$2" log="$3" errors="${4:-}"
+  local rc="$1" keep="$2" log="$3" errors="${4:-}" why
   if [ "$keep" = 1 ] && [ -n "$errors" ]; then
     printf 'verdict: %s\n' "$(abs_path "$errors")"
+    # DELIBERATELY INSIDE THIS BLOCK, so the two lines appear together or not at
+    # all. A referent with no verdict beside it is noise; a verdict with no
+    # referent is the defect this exists to close. Tying them means a reader who
+    # sees a verdict always sees what it was about, and there is no third state
+    # to reason about later. The residue is honest and small: at keep=0 neither
+    # line prints, because at keep=0 there is no pointer block at all.
+    print_run_referent
+    # Third member of the same block and for the same reason: a reader who sees
+    # a verdict sees what it was about AND how much of the run was not the work.
+    print_run_overhead "$log"
   fi
   if [ "$rc" -ne 0 ] && [ "$keep" = 1 ]; then
     printf '%s-> full log: %s (exit %s)%s\n' "${red:-}" "$log" "$rc" "${reset:-}"
@@ -699,10 +1064,27 @@ print_run_verdict() {
       printf '%s-> errors:   %s%s\n' "${red:-}" "$errors" "${reset:-}"
     fi
   fi
+  # THE RUN'S TWO CLAIMS, COMPARED AT THE ONE POINT WHERE BOTH ARE IN HAND.
+  # run_gate calls write_errors_file and then this, so the seal is on disk by
+  # now and `rc` is right here. Every other place that could ask has to go and
+  # find one of the two.
+  #
+  # This arm is why the check reaches single-gate runs at all: the ledger-based
+  # block in run_all only exists inside `<cmd> all`.
+  #
+  # It ANNOTATES AND NEVER SUPPRESSES. A red still prints its red above; this
+  # adds a line, downgrades nothing, and changes no exit status -- a guard that
+  # quietly demoted a failure would be a bypass wearing a safety label.
+  why="$(seal_disagreement_reason "$rc" "$errors")"
+  if [ -n "$why" ]; then
+    printf '%sREFUSING A VERDICT -- this gate %s%s\n' "${red:-}" "$why" "${reset:-}"
+    printf '%s  a return code and its seal disagree, so this run has NO trustworthy verdict.%s\n' \
+      "${dim:-}" "${reset:-}"
+  fi
   return 0
 }
 
-# record_seal <rc> <label> <errors> -- append a failed gate's seal to the ledger.
+# record_seal <rc> <label> <errors> -- append EVERY gate's seal to the ledger.
 #
 # Exists so the synthesised `all` (D8) can end with one block naming every gate
 # that failed AND where its seal is. Each gate already prints its own `verdict:`
@@ -710,17 +1092,77 @@ print_run_verdict() {
 # summary points without re-deriving anything or dereferencing a LATEST_*
 # pointer.
 #
+# GREEN GATES ARE RECORDED TOO, and that is the change rather than an oversight.
+# This used to `return 0` early when rc was 0, so a green gate never appeared in
+# the ledger at all -- which made a disagreement between the two sources of truth
+# UNREPRESENTABLE. A gate's return code and the `.errors` companion it seals are
+# two independent claims about one run, and the row that a false green would have
+# to contradict was simply never written. So the fix is not a check bolted onto
+# the summary; it is recording the second source at all.
+#
+# `rc` is the FIRST field for the same reason it is now written: the summary
+# filters on it, and a reader that has to reach the end of the line to learn
+# which claim it is looking at will eventually stop looking.
+#
+# All three fields are non-empty by the guards above, so the empty-field collapse
+# `read -r` performs under IFS=<tab> cannot bite and no `-` placeholder is needed.
+# That is a property of the guards, not of the data: relax one and the
+# placeholder becomes required.
+#
 # A file rather than a variable because run_option execs handlers in separate
 # processes -- an exported variable cannot carry data back up. No ledger set
 # means no ledger written, so a gate run directly is unaffected.
 record_seal() {
   local rc="$1" label="$2" errors="$3"
   [ -n "${DEVBIN_SEAL_LEDGER:-}" ] || return 0
-  [ "$rc" -ne 0 ] || return 0
   [ -n "$errors" ] || return 0
-  printf '%s\t%s\n' "$label" "$(abs_path "$errors")" >>"$DEVBIN_SEAL_LEDGER" ||
+  printf '%s\t%s\t%s\n' "$rc" "$label" "$(abs_path "$errors")" >>"$DEVBIN_SEAL_LEDGER" ||
     warn "could not record the seal for $label in the run ledger"
   return 0
+}
+
+# seal_failures <ledger> -- the formatted block naming each FAILED gate's seal.
+# seal_disagreements <ledger> -- the formatted block naming each gate whose
+#   return code and seal contradict each other. Empty output means none.
+#
+# BOTH LIVE HERE, BESIDE record_seal, BECAUSE THEY READ THE FORMAT IT WRITES.
+# The reader used to sit in run_all (lib/resolve) while the writer sat here, so
+# one tab-separated format had two homes in two files and a field added at one
+# end was a silent mis-parse at the other. Adding the `rc` field is exactly that
+# change, which is what surfaced it.
+#
+# They print rather than set a variable so the caller stays a coordinator, and so
+# a test can drive them against a hand-built ledger. That matters more than usual
+# here: a CORRECT gate cannot produce a disagreement, so the refusal arm has no
+# natural fixture and would otherwise be reasoned about instead of exercised.
+seal_failures() {
+  local ledger="$1" srr label path
+  [ -n "$ledger" ] && [ -s "$ledger" ] || return 0
+  while IFS="$(printf '\t')" read -r srr label path; do
+    [ -n "$path" ] || continue
+    [ "$srr" = "0" ] && continue
+    # Point at the SEAL, not at a LATEST_* pointer: those are re-pointed by every
+    # run in the tree, so with more than one session working they are
+    # last-writer-wins and can name a peer's run (see print_run_verdict). The
+    # seals themselves are always exact.
+    printf '  %s%-18s %s%s\n' "${dim:-}" "$label" "$path" "${reset:-}"
+  done <"$ledger"
+}
+
+# The AGGREGATE face. It classifies nothing itself -- seal_disagreement_reason
+# owns that, and this walks rows and formats. Before the extraction the same
+# two-state classification existed here only, which is precisely why the
+# single-gate path had none: the knowledge was welded to the loop that read the
+# ledger, so it could only ever be applied where a ledger existed.
+seal_disagreements() {
+  local ledger="$1" srr label path why
+  [ -n "$ledger" ] && [ -s "$ledger" ] || return 0
+  while IFS="$(printf '\t')" read -r srr label path; do
+    [ -n "$path" ] || continue
+    why="$(seal_disagreement_reason "$srr" "$path")"
+    [ -n "$why" ] || continue
+    printf '  %s%s: %s%s\n    %s\n' "${red:-}" "$label" "$why" "${reset:-}" "$path"
+  done <"$ledger"
 }
 
 # ============================================================================

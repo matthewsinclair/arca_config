@@ -195,7 +195,29 @@ command_unavailable_reason() {
     printf "devbin ships it but this project has not enabled it (set commands.%s.enabled: true)\n" "$cmd"
     return 0
   fi
-  project_speaks "$lang" && return 1
+  if project_speaks "$lang"; then
+    # The language IS available and the command is still not active, so what is
+    # missing is something to run. A command with options is active only while
+    # at least one survives (command_active, below), and `test` in a project
+    # that declares no languages is the reference case: every gate it ships is
+    # language-scoped, none is active, and an offered `test all` would seal
+    # success having run zero gates -- the false green the sealed gates exist to
+    # prevent. Withholding it is right.
+    #
+    # Withholding it SILENTLY was not. This branch did not exist, so a command
+    # in this state got no reason from here at all: `help --why` dropped it from
+    # both lists, and the dispatcher fell through to "unknown command: test" --
+    # which says devbin has no such command, when it has one and cannot run it.
+    # Found at Riffle, ST0002 close, on a fresh install with `languages:` still
+    # commented out. Both callers are fixed by this one branch, which is why it
+    # belongs here and not in the help renderer.
+    if [ -n "$(builtin_options "$cmd")" ] || [ -n "$(cfg_list "commands.$cmd.options")" ]; then
+      printf 'every option it offers is inactive here, so it would run nothing (declare project.languages in %s, or commands.%s.run)\n' \
+        "${DEVBIN_DIR:-bin/.devbin}/config.yaml" "$cmd"
+      return 0
+    fi
+    return 1
+  fi
   printf "this project does not declare the '%s' language\n" "$lang"
   return 0
 }
@@ -391,7 +413,7 @@ EOF
 run_all() {
   local cmd="$1"
   shift
-  local opt failed="" skipped="" rc=0 ledger="" label path
+  local opt failed="" skipped="" rc=0 ledger="" label path srr why disagreed=""
   init_colors auto
   # ZERO options is a REFUSAL, not a pass. Without this the loop below runs no
   # times and the tail prints "all <cmd> options passed" -- success reported for
@@ -434,22 +456,52 @@ run_all() {
   if [ -n "$skipped" ]; then
     printf '\n%sskipped (in_all: false):%s%s\n' "${dim:-}" "$skipped" "${reset:-}"
   fi
+  # A GATE'S RETURN CODE AND THE SEAL IT WRITES ARE TWO INDEPENDENT CLAIMS ABOUT
+  # ONE RUN, and until 2026-08-17 nothing compared them. Measured that day: the
+  # bats leg sealed a non-empty `.errors` (one failure of 1311) at 04:05:33, the
+  # Rust leg sealed empty at 04:06:47, and the run was reported to a human as
+  # "100% green (rust and bats)" at 04:07 -- who acted on it. `failed` was built
+  # from return codes alone, so the seal had nothing it could contradict.
+  #
+  # Computed BEFORE the FAILED block so that BOTH can print. The shape this was
+  # handed to me in was `if failed / elif disagreed`, which hides a false green
+  # behind an unrelated real failure -- and the false green is the more dangerous
+  # of the two, because it is the one nobody goes looking for. The two sets are
+  # disjoint by construction (this walk keeps only rc=0 rows and the FAILED walk
+  # drops them), so printing both is additive, never double-reporting.
+  disagreed="$(seal_disagreements "$ledger")"
   if [ -n "$failed" ]; then
     printf '\n%sFAILED:%s%s\n' "${red:-}" "$failed" "${reset:-}"
-    # Point at each failure's SEAL, not at a LATEST_* pointer: those are
-    # re-pointed by every run in the tree, so with more than one session working
-    # they are last-writer-wins and can name a peer's run (lib/runlog,
-    # print_run_verdict). The seals themselves are always exact.
-    if [ -n "$ledger" ] && [ -s "$ledger" ]; then
-      while IFS="$(printf '\t')" read -r label path; do
-        [ -n "$path" ] || continue
-        printf '  %s%-18s %s%s\n' "${dim:-}" "$label" "$path" "${reset:-}"
-      done <"$ledger"
-    fi
+    seal_failures "$ledger"
     rc=1
-  else
+  fi
+  # It REFUSES rather than reclassifying. Folding this into FAILED would assert
+  # which of the two sources is right, and the entire reason this arm exists is
+  # that we do not know. A gate returning 0 while its seal says otherwise is a
+  # bug in THE GATE, not a test failure, and saying exactly that is the useful
+  # output -- it names where to go and does not pretend to a verdict it lacks.
+  if [ -n "$disagreed" ]; then
+    printf '\n%sREFUSING A VERDICT -- a return code and its seal disagree:%s\n' "${red:-}" "${reset:-}"
+    printf '%s\n' "$disagreed"
+    printf '  %sthis is a bug in the gate, not a test failure: the run has NO trustworthy verdict.%s\n' \
+      "${dim:-}" "${reset:-}"
+    rc=1
+  fi
+  if [ -z "$failed" ] && [ -z "$disagreed" ]; then
     printf '\n%sall %s options passed%s\n' "${green:-}" "$cmd" "${reset:-}"
   fi
+  # THE SUMMARY IS WHERE THE INCIDENT HAPPENED, and covering only the per-gate
+  # line would have missed it. A human read `FAILED: rust` in THIS block and had
+  # no way to know the tree had moved under it. Every per-gate `verdict:` now
+  # carries a referent, but this file already says out loud why that is not
+  # enough (see the ledger comment above): across a ten-option `all` those lines
+  # have scrolled away by the time the summary prints. A remedy sited only where
+  # the reader is not looking is built, correct, and absent from the exact screen
+  # it was filed from -- which reads as a close.
+  #
+  # ONE line, AFTER every verdict block, so it covers red, green and the refusal
+  # without being spelled three times.
+  print_run_referent
   if [ -n "$ledger" ]; then
     rm -f "$ledger"
     unset DEVBIN_SEAL_LEDGER
@@ -476,7 +528,7 @@ run_all() {
 # it as unknown, which is both wrong and confusing, since config plainly
 # declares it.
 run_option() {
-  local cmd="$1" opt="$2" handler run log_suffix
+  local cmd="$1" opt="$2" handler run log_suffix grammar
   shift 2
 
   if has_project_handler "$cmd"; then
@@ -510,6 +562,34 @@ run_option() {
     # signal for "this produces a verdict" -- it was in the schema and validated
     # from WP-03 and simply had nothing reading it.
     log_suffix="$(cfg_get "commands.$cmd.options.$opt.log")"
+    grammar="$(cfg_get "commands.$cmd.options.$opt.grammar")"
+
+    # A config `run:` replaces an option's COMMAND LINE. It does not replace
+    # what the option IS. Where the catalogue declares this option a sealed gate
+    # -- `test.swift` is suffix SWIFT, grammar xcodebuild -- an override silent
+    # about `log:` and `grammar:` INHERITS both from the row, because a project
+    # pointing a gate at its own build has not asked to stop sealing.
+    #
+    # Without this, overriding a catalogue gate's command line silently demoted
+    # it to a bare exec: it ran, it failed, it exited non-zero, and it wrote no
+    # verdict file at all. Not an empty `.errors` meaning green -- no seal to
+    # read. In a project that reads seals rather than exit codes that is the
+    # worst available failure, and the correct exit code is precisely what hides
+    # it (ST0002 WP-08, the first project to arm swift).
+    #
+    # The fallback reaches only options the CATALOGUE knows. A project's own
+    # invention -- Lamplight's `build cli` -- has no row, so `log:` stays opt-in
+    # there exactly as documented, and an interactive option is still not teed.
+    if [ -z "$log_suffix" ]; then
+      log_suffix="$(builtin_option_suffix "$cmd" "$opt" 2>/dev/null || true)"
+      [ "$log_suffix" = "-" ] && log_suffix=""
+    fi
+    if [ -z "$grammar" ]; then
+      grammar="$(builtin_option_grammar "$cmd" "$opt" 2>/dev/null || true)"
+      [ "$grammar" = "-" ] && grammar=""
+    fi
+    [ -n "$grammar" ] || grammar=generic
+
     if [ -n "$log_suffix" ]; then
       # In a SUBSHELL at the project root. A declared `run:` is a project
       # command -- `mix test`, `cargo build` -- so it belongs at the root the
@@ -526,7 +606,7 @@ run_option() {
         gate_split_args "$@"
         run_gate --label "$cmd $opt" \
           --suffix "$(gate_log_suffix "$opt" "$log_suffix")" \
-          --grammar "$(cfg_get "commands.$cmd.options.$opt.grammar" generic)" \
+          --grammar "$grammar" \
           --out-dir "$(gate_out_dir "$cmd")" \
           ${DEVBIN_GATE_FLAGS[@]+"${DEVBIN_GATE_FLAGS[@]}"} \
           -- $run ${DEVBIN_GATE_ARGS[@]+"${DEVBIN_GATE_ARGS[@]}"}
@@ -715,34 +795,75 @@ run_command() {
 # would turn this pair list into a wider table; make that change when there is
 # one.
 #
-# EACH MEMBER CARRIES THE LANGUAGE WHOSE COMMANDS CONSUME IT (`<name>:<lang>`),
-# and is offered on exactly the D11 axis those commands are. D20 already said
+# EACH MEMBER CARRIES THE LANGUAGE WHOSE COMMANDS CONSUME IT AND THE BUILT-INS
+# THAT ACTUALLY READ IT (`<name>:<lang>:<cmd>[,<cmd>...]`). D20 already said
 # framework options exist "exactly as built-in commands do (D2, D11)"; the
 # analogy was simply never carried into the code, so the option's activation was
 # wired to nothing while its consumers' was wired to language. The visible
 # result was devbin's own help offering `--iex` and then, four lines later,
 # listing all four surfaces as not offered here (issue 0001).
 #
-# The language and the consumer set are the same thing today -- `lib/cmd/server`
-# is the only reader of DEVBIN_OPT_IEX and it is an elixir row -- so this reuses
-# the mechanism that exists rather than inventing a second one that maps options
-# to consuming commands. D18's tier-4 discipline again: do not generalise ahead
-# of the evidence.
-_DEVBIN_FRAMEWORK_OPTIONS="iex:elixir"
+# THE CONSUMER COLUMN IS ISSUE 0009, and it is issue 0001's own deferred
+# question -- "is the right key the language, or the consuming command?" -- which
+# 0001 answered with the language explicitly for want of evidence, noting here
+# that "the language and the consumer set are the same thing today". They were,
+# while every elixir project in the corpus ran a server. A library does not, so
+# arca_config and MicroGPTEx declare elixir with `server` switched off, and the
+# proxy started advertising a flag nothing could read.
+#
+# hv's ruling, 2026-08-10: `--iex` selects a SERVER's IEx form. It is not a
+# general "do this in IEx" modifier -- running `cli` or `repl` under it makes no
+# sense and nobody would want to. So the flag is offered where a consumer is
+# active, and REFUSED where the command being run is not one of them: silence is
+# what let ST0002 WP-02 record `cli --iex` as a working replacement for a script
+# it then deleted.
+#
+# The column lists devbin's OWN consumers only. A project extends the set for
+# its own handlers with `options.<name>.commands` -- Lamplight's `wrighter`
+# reads DEVBIN_OPT_IEX and picks a different command line for it, which devbin
+# cannot know by looking. D18's tier-4 discipline: ship the rig, let the project
+# name its target.
+_DEVBIN_FRAMEWORK_OPTIONS="iex:elixir:server"
 
 # _framework_option_lang <name> -- the language whose commands consume this
 # framework option, or return 1 when devbin does not own the name at all.
 _framework_option_lang() {
-  local pair
+  local pair rest
   for pair in $_DEVBIN_FRAMEWORK_OPTIONS; do
     case "$pair" in
       "$1":*)
-        printf '%s\n' "${pair#*:}"
+        rest="${pair#*:}"
+        printf '%s\n' "${rest%%:*}"
         return 0
         ;;
     esac
   done
   return 1
+}
+
+# framework_option_consumers <name> -- every command that reads this option
+# here, one per line: devbin's own from the table, plus whatever the project
+# declares for its own handlers. Empty output with status 0 is impossible --
+# devbin never ships an option with no consumer -- so callers may treat an
+# empty list as "devbin does not own this name".
+#
+# Public because both the dispatcher (to refuse) and help (to say what the flag
+# applies to) need the same answer, and two derivations of one fact drift.
+framework_option_consumers() {
+  local pair rest i v
+  for pair in $_DEVBIN_FRAMEWORK_OPTIONS; do
+    case "$pair" in
+      "$1":*)
+        rest="${pair#*:}"
+        printf '%s\n' "${rest#*:}" | tr ',' '\n'
+        ;;
+    esac
+  done
+  for i in $(cfg_list "options.$1.commands"); do
+    v="$(cfg_get "options.$1.commands.$i")"
+    [ -n "$v" ] && printf '%s\n' "$v"
+  done
+  return 0
 }
 
 # _framework_option <name> -- is this an option devbin owns AND offers HERE?
@@ -752,10 +873,43 @@ _framework_option_lang() {
 # advertise it, or advertised in one that would not accept it. Two predicates
 # for one question is the breach that made `db setup` run the catalogue's line
 # while config plainly said otherwise, and the shorter list loses silently.
+#
+# "Offered here" now means what it says: the language is spoken AND something
+# that reads the flag is active. The language test stays because it is the
+# cheaper half and because a consumer's own activation already depends on it --
+# dropping it would not change the answer, only the reason given for it.
 _framework_option() {
-  local lang
+  local lang cmd
   lang="$(_framework_option_lang "$1")" || return 1
-  project_speaks "$lang"
+  project_speaks "$lang" || return 1
+  for cmd in $(framework_option_consumers "$1"); do
+    command_active "$cmd" && return 0
+  done
+  return 1
+}
+
+# framework_option_takes <command> <name> -- can THIS command read the option?
+#
+# The per-invocation half of the question _framework_option answers per-project.
+# Devbin does not own the name here, so it has no opinion: return 0.
+#
+# WHO DECIDES THE SCOPE. A project that declares the option's SHAPE and says
+# nothing about commands has taken the option over -- devbin has no opinion
+# about its scope either, exactly as a project handler owns its own option set.
+# But `commands:` is an explicit request to be scoped, so it wins over that
+# hands-off rule whoever declared the shape. The alternative -- shape declared
+# means never policed -- makes `commands:` silently inert in the one config that
+# asks for both, which is the same silence this whole issue is about.
+framework_option_takes() {
+  local cmd
+  _framework_option "$2" || return 0
+  if _shared_option_declares_shape "$2" && [ -z "$(cfg_list "options.$2.commands")" ]; then
+    return 0
+  fi
+  for cmd in $(framework_option_consumers "$2"); do
+    [ "$cmd" = "$1" ] && return 0
+  done
+  return 1
 }
 
 # framework_options -- the framework-owned option names, one per line.
@@ -781,7 +935,10 @@ framework_options() {
 
 framework_option_summary() {
   case "$1" in
-    iex) printf 'Start the surface in IEx rather than plain\n' ;;
+    # "the surface", singular and generic, is what made this flag read as a
+    # modifier any surface would honour. It is the server's, and issue 0009 is
+    # what a too-general summary costs when someone believes it.
+    iex) printf 'Start the server in IEx rather than plain\n' ;;
     *) return 1 ;;
   esac
   return 0
@@ -808,15 +965,31 @@ _shared_option_declared() {
   _framework_option "$1"
 }
 
+# _shared_option_declares_shape <name> -- does config say what SHAPE this option
+# has, as opposed to merely mentioning it?
+#
+# `options.<name>.commands` extends the CONSUMER SET and says nothing about
+# shape. Testing mere presence conflated the two: a project declaring only
+# `commands:` flipped a framework flag into a valued option, so `--iex` began
+# eating the next argument and `show --iex keep-me` lost `keep-me`. Presence is
+# not a claim; these four keys are.
+_shared_option_declares_shape() {
+  local k
+  for k in flag export value values; do
+    cfg_has "options.$1.$k" && return 0
+  done
+  return 1
+}
+
 # _shared_option_is_flag <name> -- a flag takes no value (--iex, --repl, --json).
 _shared_option_is_flag() {
   case "$(cfg_get "options.$1.flag" false)" in
     true | yes | 1) return 0 ;;
   esac
-  # Config wins on SHAPE wherever it declares the option -- a project may spell
-  # `--iex` as a valued option if it wants. Only when config is silent does the
-  # framework default apply, and every framework option is a flag.
-  _shared_option_in_config "$1" && return 1
+  # Config wins on SHAPE wherever it declares shape -- a project may spell
+  # `--iex` as a valued option if it wants. Only where config declares none does
+  # the framework default apply, and every framework option is a flag.
+  _shared_option_declares_shape "$1" && return 1
   _framework_option "$1"
 }
 
@@ -870,12 +1043,42 @@ apply_shared_option() {
   return 0
 }
 
-# parse_common_opts [args...] -- consume declared shared options, leave the rest
-# in DEVBIN_ARGS.
+# _assert_option_reaches_command <command> <name> -- refuse a framework option
+# the command being run cannot read.
+#
+# EXIT 2 AND `warn`, not `die`, because this is the same answer the dispatcher
+# already gives for a command or option deactivated by configuration -- "'<prj>
+# <cmd> <opt>' is not available here: <reason>", exit 2. One question, one
+# wording, one code: a reader who has seen the message once should not have to
+# learn that the flag-level version of it looks different (issue 0007's lesson,
+# one level down).
+#
+# The reason NAMES the commands that do take it. A remediation string is a code
+# path with a user's trust attached, and "not available" without "here is where
+# it is" is a dead end rather than a refusal.
+_assert_option_reaches_command() {
+  local cmd="$1" name="$2" takers
+  # No command in hand means nothing to scope against -- help's own flags are
+  # parsed before this point and a bare `devbin --iex` has no command at all.
+  [ -n "$cmd" ] || return 0
+  framework_option_takes "$cmd" "$name" && return 0
+  takers="$(framework_option_consumers "$name" | tr '\n' ' ')"
+  warn "'$DEVBIN_NAME $cmd --$name' is not available here: --$name applies to: ${takers% }"
+  exit 2
+}
+
+# parse_common_opts <command> [args...] -- consume declared shared options,
+# leave the rest in DEVBIN_ARGS.
 #
 # Both spellings the corpus accepted are handled: `--env test` and `--env=test`.
 # An undeclared `--flag` is NOT an error -- it passes through to the handler,
 # which is what lets `devbin test mix --trace` reach mix.
+#
+# THE COMMAND IS AN ARGUMENT because a framework option is scoped to the
+# commands that read it (issue 0009), and the option is consumed here, before
+# the dispatcher reaches its own not-available-here checks. Taking it as a
+# parameter rather than reading a global keeps this function answerable from a
+# test without staging the dispatcher's state.
 #
 # THE BASH 3.2 TRAP. DEVBIN_ARGS is an array so arguments keep their boundaries
 # (`--only "a b"` stays one argument). Under `set -u`, bash 3.2 -- the /bin/bash
@@ -890,13 +1093,15 @@ apply_shared_option() {
 # expanded the array on paths that had already put something in it.
 parse_common_opts() {
   DEVBIN_ARGS=()
-  local name
+  local name cmd="${1:-}"
+  shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --*=*)
         name="${1%%=*}"
         name="${name#--}"
         if _shared_option_declared "$name"; then
+          _assert_option_reaches_command "$cmd" "$name"
           # A FLAG given a value is refused, not quietly ignored. `--iex=false`
           # exported `true` -- the flag's fixed value -- so the config was
           # ignored in the one spelling where the user had been most explicit
@@ -918,6 +1123,7 @@ parse_common_opts() {
           shift
           continue
         fi
+        _assert_option_reaches_command "$cmd" "$name"
         if _shared_option_is_flag "$name"; then
           apply_shared_option "$name" ""
           shift

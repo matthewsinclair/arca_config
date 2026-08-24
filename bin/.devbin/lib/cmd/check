@@ -19,19 +19,105 @@ set -euo pipefail
 #
 #   - A language declared in intent/.config/config.json with no headless critic
 #     is DROPPED from the run rather than failing it, but the whole set being
-#     empty is fatal: a critic gate that examines nothing and exits 0 is a false
-#     green, which is the failure the sealed gates exist to prevent.
+#     empty is fatal: a critic gate with no critic behind it exits 0 having
+#     examined nothing, which is a false green.
 #   - With no arguments it defaults to --staged, and SAYS SO when nothing is
-#     staged. Silently examining zero files would pass for the same reason.
+#     staged.
+#
+# ON THE EMPTY RUN. This comment used to say that examining zero files is always
+# a false green, and the code was made to match it -- correctly, because until
+# then this gate declared a grammar with no counter and could not fail that way
+# at all. But the corpus here is a SELECTION, not a suite, and the promotion
+# counts and does nothing else, so it made the ORDINARY case red. A gate that is
+# red in the ordinary case is how a gate teaches people to ignore it.
+#
+# The split, declared by `builtin_check_critic_gateflags` below:
+#
+#   the default --staged corpus -> NOT APPLICABLE if it scans nothing. Declared
+#                                  with --allow-empty, ANNOUNCED by run_gate as
+#                                  "no tests ran", and green.
+#   an explicit --files corpus  -> FAILED on zero, unchanged. The caller named
+#                                  files; examining none of them is never what
+#                                  was intended.
+#
+# WHAT THIS DELIBERATELY DOES NOT CLAIM, because the first version of it claimed
+# exactly this and was wrong in the field within the hour. It does not
+# distinguish "nothing was staged" from "things were staged but none of them
+# were code". The obvious-looking predicate -- allow empty only when `git diff
+# --cached` is empty -- FIRES ON MARKDOWN: stage a doc, and a gate about source
+# code goes red for a reason that has nothing to do with source code. Measured
+# on Laksa with five .md files staged.
+#
+# Getting that right needs a language-to-extension map, and devbin has none. The
+# critic owns which files belong to which language, and a second copy of that
+# here would be a second source of truth about the one thing this gate does not
+# own. So the residual hole is stated rather than papered over: a staged file
+# that SHOULD have reached a critic and did not is invisible from outside the
+# critic, and this gate cannot see it.
+#
+# What it does buy is the half that was actually complained about three separate
+# times: the leg no longer reports a silent `ok` having examined nothing. It
+# says so. That is the rule this estate already states in append-only-guard.sh
+# -- NOT APPLICABLE IS SILENT, AND ABSENT IS LOUD -- with the announcement doing
+# the work the exit code cannot.
+# builtin_check_critic_gateflags -- declare, BEFORE the gate starts, whether an
+# empty run is legitimate for THIS invocation. Prints gate flags, one per line;
+# printing nothing leaves run_gate's default promotion in force.
+#
+# Called by run_builtin_gate (lib/gatecmd) with the same argv the builtin will
+# receive. Argv is the whole test, and that is the point: it separates a corpus
+# the caller CHOSE from one that defaulted to --staged, which is the only part
+# of this question devbin can answer without owning a language map it does not
+# own.
+#
+# Deliberately silent about WHY it is empty. The announcement is run_gate's
+# ("no tests ran (--allow-empty)") and the builtin's own warn; a third voice
+# saying the same thing in a different place is how the reason and the verdict
+# drift apart.
+builtin_check_critic_gateflags() {
+  # An explicit corpus is never legitimately empty -- the caller named files and
+  # expects them examined -- so say nothing and let the promotion stand.
+  [ $# -eq 0 ] || return 0
+  # The default corpus may legitimately hold nothing a critic reads. Whether it
+  # does is the critic's knowledge, not this gate's; see the header.
+  printf '%s\n' '--allow-empty'
+  return 0
+}
+
 builtin_check_critic() {
   require_tool intent "Install Intent: see intent/docs at the Intent install"
   require_tool jq "brew install jq"
 
-  local declared headless langs="" lang rc=0
-  declared="$(jq -r '(.languages // []) | .[]' "$PROJECT_ROOT/intent/.config/config.json" 2>/dev/null || true)"
+  local declared headless langs="" lang rc=0 hl_rc=0 jq_rc=0 cfg
+  cfg="$PROJECT_ROOT/intent/.config/config.json"
+  # THREE CONDITIONS, THREE DIAGNOSES (issue 0016). The `|| true` here collapsed
+  # an ABSENT config, an UNPARSEABLE one, and a genuinely EMPTY `languages` array
+  # into a single message -- and that message is right about exactly one of the
+  # three, so it offered `intent lang init <lang>` to someone whose config is
+  # missing or malformed. Measured: jq exits 2 on an absent file, 5 on a parse
+  # error, and 0 on `[]`. The status distinguishing them was there to be read.
+  #
+  # This line survived the sweep that fixed the one below it, in the same
+  # function, four lines apart. A sweep looks for the reported SHAPE; this one
+  # wears `|| true` where that one wore a discarded `$?`.
+  [ -f "$cfg" ] ||
+    die "no config at $cfg -- run this from an Intent project root (PROJECT_ROOT is $PROJECT_ROOT)"
+  declared="$(jq -r '(.languages // []) | .[]' "$cfg" 2>/dev/null)" || jq_rc=$?
+  [ "$jq_rc" -eq 0 ] ||
+    die "could not parse $cfg (jq exit $jq_rc) -- the config is not valid JSON. This is NOT an absence of declared languages."
   [ -n "$declared" ] ||
     die "no languages declared in intent/.config/config.json (intent lang init <lang>)"
-  headless="$(intent critic --languages 2>/dev/null || true)"
+  # "NO LANGUAGE HAS A HEADLESS CRITIC" AND "THE TOOL THAT LISTS THEM DID NOT
+  # ANSWER" ARE DIFFERENT ABSENCES (issue 0016).
+  # `|| true` discarded the status, so a CLI that cannot answer produced an empty
+  # list, which produced an empty `langs`, which died naming the wrong cause --
+  # blaming the project's language declarations for a failure of the tool. It
+  # fails closed, so nothing was ever silently skipped; the cost is a wrong
+  # diagnosis at exactly the moment it is most expensive, since the known trigger
+  # is a v3 binary shadowing v2 on PATH.
+  headless="$(intent critic --languages 2>/dev/null)" || hl_rc=$?
+  [ "$hl_rc" -eq 0 ] ||
+    die "\`intent critic --languages\` failed (exit $hl_rc) -- cannot tell which languages have a headless critic. The tool did not answer; this is not an absence of critics. Check which \`intent\` is on PATH: a second install shadowing the expected one is the known cause."
 
   for lang in $declared; do
     case "
@@ -46,7 +132,7 @@ $lang
   if [ $# -eq 0 ]; then
     set -- --staged
     if [ -z "$(git -C "$PROJECT_ROOT" diff --cached --name-only 2>/dev/null)" ]; then
-      warn "nothing staged -- the critic will examine NO files (stage changes, or pass --files <path>...)"
+      warn "nothing staged -- the critic will examine NO files, which is not a failure here (stage changes, or pass --files <path>...)"
     fi
   fi
 
@@ -176,8 +262,25 @@ builtin_check_format() {
 }
 
 # _check_format_swift -- the non-mutating twin of builtin_fmt_swift, over the
-# same file set with --lint instead of --in-place. A missing swift-format is a
-# gate failure, where `fmt swift` skips.
+# same file set with the `lint` subcommand instead of `format --in-place`. A
+# missing swift-format is a gate failure, where `fmt swift` skips.
+#
+# SUBCOMMAND, not a flag. This read `swift-format --lint` from the day it was
+# written until ST0002 WP-08, and that is not an option swift-format has ever
+# had -- the tool dispatches on a subcommand (`lint`, or `format` as the
+# default), so the flag was being parsed as an unknown option OF `format`. It
+# survived two reviews of this function because devbin's own repository has no
+# .swift files: the determinate-zero path below returns green before reaching
+# the command line, so the gate had never once executed it. A legitimate empty
+# run is still a run that proves nothing about the non-empty one.
+#
+# `--strict` is the other half, and it is the half that matters. `swift-format
+# lint` exits 0 WITH findings -- they are warnings unless promoted -- so
+# correcting the subcommand alone produced a gate that examined 78 files,
+# printed 633 findings, and sealed GREEN. That is a worse defect than the one
+# it replaced, because a hard error announces itself and a false green does
+# not, and it is exactly what the seal is for: the terminal was full of
+# findings and tmp/check/<stamp>.FORMAT.errors was empty. Read the seal.
 #
 # IT REPORTS HOW MANY FILES IT EXAMINED, and that is not decoration. The first
 # version ran the linter through a pipeline that runs nothing at all when the
@@ -211,7 +314,7 @@ _check_format_swift() {
   printf '    %s file(s)\n' "$n"
   [ "$n" -gt 0 ] || return 0
 
-  swift-format --lint "${files[@]}"
+  swift-format lint --strict "${files[@]}"
 }
 
 # builtin_check_toolchain -- the pinned toolchain must match what is running.
@@ -227,7 +330,37 @@ builtin_check_toolchain() {
   [ $# -eq 0 ] ||
     die "check toolchain takes no arguments (got: $*)
        It compares .tool-versions against the running toolchain, whole-project."
-  [ -f "$tv" ] || die "no .tool-versions at $tv"
+  # A MISSING .tool-versions IS THE SAME DETERMINATE FACT AS A PRESENT ONE THAT
+  # PINS NOTHING, AND THIS FUNCTION ALREADY REPORT-AND-PASSES ON THE SECOND.
+  # Twenty lines below, a file with no elixir/erlang pin warns "nothing to
+  # compare" and returns 0. No file at all was `die`-ing -- so one gate answered
+  # "this project declares no pin" in two opposite ways depending on whether the
+  # project expressed it by omitting a line or by omitting a file.
+  #
+  # `builtin_check_format` above settles which way is right: it treats a
+  # determinate "nothing to check" as REPORT AND PASS, on the grounds that it is
+  # a fact about the PROJECT rather than a run that went wrong. The distinction
+  # that matters there is UNSET versus EMPTY, and it applies here unchanged --
+  # absent-and-determinate is not the same as could-not-tell.
+  #
+  # WHY IT MATTERS BEYOND TIDINESS: `check toolchain` is an arm of `int check
+  # all`, the one command a developer runs to ask "is anything wrong". A project
+  # that legitimately pins nothing got a PERMANENT red for a reason that could
+  # never change, and a permanently-red aggregate is worse than a slow one --
+  # a slow gate gets bypassed, an always-red gate gets ignored, and the real
+  # failure then hides inside the noise. Intent measured exactly that on
+  # 2026-08-16: clippy, format and critic all passed; toolchain was the whole
+  # of the red, on every run, forever.
+  #
+  # THIS DOES NOT WEAKEN THE GATE. Its subject is SKEW between a pin and what is
+  # running, and a project with no pin has no skew to have. It still fails on a
+  # pin that disagrees with the live toolchain, which is the whole reason it
+  # exists. What it stops doing is reporting the ABSENCE of a policy as a
+  # violation of one.
+  if [ ! -f "$tv" ]; then
+    printf '    no .tool-versions -- this project declares no toolchain pin\n'
+    return 0
+  fi
 
   local pin_ex pin_erl pin_erl_full live_ex live_erl erl_root otp_file coarse=0
   local dockerfile img_ex img_erl

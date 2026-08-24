@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# `rlwrap_exec <completions> <history> -- mix <name>.cli repl "$@"`, which is
-# Lamplight's, generalised by the project name.
+# `rlwrap_exec <completions> <history> -- mix <task> repl "$@"`, which is
+# Lamplight's, generalised by the task name.
 #
 # rlwrap is what makes this worth shipping rather than declaring: a bare REPL
 # has no line editing, no persistent history and no completion, and wiring that
@@ -38,4 +38,8 @@ history="${!history_var:-}"
 # been generated yet is harmless rather than fatal.
 completions="$PROJECT_ROOT/bin/completions/repl.txt"
 
-rlwrap_exec "$completions" "$history" -- mix "$name.cli" repl "$@"
+# DEVBIN_CLI_TASK, not "$name.cli": arca_cli's task is `arca.cli`, and this
+# handler is the reason that had to become config rather than a `run:` override
+# -- overriding the command line to change one word would take the rlwrap
+# wiring above with it (ST0002 WP-03).
+rlwrap_exec "$completions" "$history" -- mix "${DEVBIN_CLI_TASK:?}" repl "$@"
