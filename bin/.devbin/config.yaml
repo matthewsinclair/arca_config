@@ -29,11 +29,14 @@ devbin_version: "^0.1.0"
 help:
   tagline: "dev launcher for arca_config -- the configuration library the Arca tools share"
 
-docs:
-  # `docs treeindex` refuses the project root and requires a list.
-  treeindex_dirs:
-    - lib
-    - test
+# `docs treeindex` was REMOVED from devbin on 2026-08-25 (devbin#0032), and the
+# docs.treeindex_dirs key that fed it went with it. Intent v3 retires `intent
+# treeindex` with no replacement (executed at intent 861fa66c), so the option
+# was a catalogue row that lists cleanly, resolves cleanly and can never succeed
+# once this estate moves. The key is not merely unread now: the schema no longer
+# knows it, so leaving it here fails `devbin doctor` for a setting nothing uses.
+# This note is deliberate -- a removal nothing records is a removal that comes
+# back the next time someone wonders why the docs block is thin.
 
 commands:
   server:
