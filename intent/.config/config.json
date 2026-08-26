@@ -1,16 +1,19 @@
 {
-  "intent_version": "2.18.0",
+  "author": "matts",
   "intent_dir": "intent",
-  "plugins": {
-    "claude": {
-      "subagents_path": "intent/plugins/claude/subagents"
-    },
-    "agents": {
-      "config_path": "intent/plugins/agents"
-    }
-  },
+  "intent_version": "3.0.0",
   "languages": [
     "shell",
     "elixir"
-  ]
+  ],
+  "plugins": {
+    "agents": {
+      "config_path": "intent/plugins/agents"
+    },
+    "claude": {
+      "subagents_path": "intent/plugins/claude/subagents"
+    }
+  },
+  "project_id": "3880b4be-d496-456d-8e34-e0f34d03fedd",
+  "project_name": "arca_config"
 }

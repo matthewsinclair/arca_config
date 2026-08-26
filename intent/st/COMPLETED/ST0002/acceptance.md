@@ -93,7 +93,7 @@ title: "Fable review of arca_config base code -- acceptance contract"
 
 ### ST-level
 
-- AT-00.1 test/config/consumer_contract_test.exs -- covers AC-00.4 -- status: green (eight tests, each citing the arca_cli file:line that makes the call; red-first on the facade gap, closed by AC-02.3 in the same commit)
+- AT-00.1 `test/config/consumer_contract_test.exs` -- covers AC-00.4 -- status: green -- eight tests, each citing the arca_cli file:line that makes the call; red-first on the facade gap, closed by AC-02.3 in the same commit
 - Coverage: AC-00.1/.2/.3 are non-test with evidence on the AC line; AC-00.4 covered by AT-00.1
 
 ### WP-01
@@ -109,15 +109,15 @@ title: "Fable review of arca_config base code -- acceptance contract"
 ### WP-02
 
 - AT-02.1 test/config/server_test.exs::"a write through Cfg has the same effect as a write through Server" (+ the read sibling) -- covers AC-02.1 -- status: green (red-first). Restated: the AC asked for the watcher write-token to be registered once per path, and WP-03 removed the token mechanism outright, so the AT pins the behaviour the token existed to protect -- disk, cache and subscribers move together on every public write
-- AT-02.2 test/config/error_dialect_test.exs -- covers AC-02.2 -- status: green (twelve tests, nine red first: the shape from all four entry points, the key path in the error, the cause preserved on load and parse failures, the rendering, and the two shapes that deliberately stay as they are)
+- AT-02.2 `test/config/error_dialect_test.exs` -- covers AC-02.2 -- status: green -- twelve tests, nine red first: the shape from all four entry points, the key path in the error, the cause preserved on load and parse failures, the rendering, and the two shapes that deliberately stay as they are
 - AT-02.3 covered by AT-00.1 in test/config/consumer_contract_test.exs::"the facade exposes the location and delete API its docs promise" -- covers AC-02.3 -- status: green (red-first). Folded into the consumer contract module rather than a separate facade_test.exs: the reason the facade needs these is that a consumer expects them, so the assertion belongs where the consumer contract lives
-- AT-02.4 test/config/map_test.exs::"pop deletes through the one write path" (+ missing-key and get_and_update siblings) -- covers AC-02.4 -- status: green (red-first)
+- AT-02.4 test/config/map_test.exs::"pop deletes through the one write path" (+ missing-key and get_and_update siblings) -- covers AC-02.4 -- status: green -- red-first
 - AT-02.5 test/config/server_test.exs::"the :get_config call answers with the config map itself" (+ the notify_external_change sibling) -- covers AC-02.5 -- status: green. Characterisation rather than red-first, stated plainly: the substance of this AC is removing an unreachable clause and the mock that fabricated a reply to reach it, so the AT holds the real behaviour across the removal rather than failing before it
 - Coverage: AC-02.1..5 each have an AT; none uncovered
 
 ### WP-03
 
-- AT-03.1 test/config/notification_matrix_test.exs::"matrix: each channel fires once per covered path" -- covers AC-03.1, AC-03.2, AC-03.3 -- status: green (with nine siblings in the same module walking reload, external detect and switch, the ancestor-replacement case, the unchanged-value cases, and the two re-entrancy pins)
+- AT-03.1 test/config/notification_matrix_test.exs::"matrix: each channel fires once per covered path" -- covers AC-03.1, AC-03.2, AC-03.3 -- status: green -- with nine siblings in the same module walking reload, external detect and switch, the ancestor-replacement case, the unchanged-value cases, and the two re-entrancy pins
 - AT-03.2 test/config/file_watcher_test.exs::"watcher survives malformed JSON and recovers" -- covers AC-03.4 -- status: green
 - AT-03.3 test/config/file_watcher_test.exs::"external edit within post-write window is detected" -- covers AC-03.5 -- status: green
 - AT-03.4 test/config/server_test.exs::"ancestor get reflects nested put (cache coherence)" -- covers AC-03.6 -- status: green
@@ -128,15 +128,15 @@ title: "Fable review of arca_config base code -- acceptance contract"
 - AT-04.1 test/config/cfg_test.exs::"precedence chain end-to-end" -- covers AC-04.1 -- status: green
 - AT-04.2 test/config/cfg_test.exs::"config_domain deterministic without heuristic" -- covers AC-04.2 -- status: green
 - AT-04.3 test/config/cfg_test.exs::"location stable across file creation" -- covers AC-04.3 -- status: green
-- AT-04.4 **test/isolation_test.exs**::"suite leaves repo tree and env exactly as found" -- covers AC-04.5 -- status: green (path clarified from `test/support/isolation_check.exs`: ExUnit only runs `*_test.exs` under `test/`, so the drafted path would never have executed -- vc's own reachability lens, applied to my own contract. The comparison helper lives at `test/support/isolation.ex` and the standing guard is in `test/test_helper.exs`)
+- AT-04.4 **test/isolation_test.exs**::"suite leaves repo tree and env exactly as found" -- covers AC-04.5 -- status: green -- path clarified from `test/support/isolation_check.exs`: ExUnit only runs `*_test.exs` under `test/`, so the drafted path would never have executed -- vc's own reachability lens, applied to my own contract. The comparison helper lives at `test/support/isolation.ex` and the standing guard is in `test/test_helper.exs`
 - AT-04.5 test/config/cfg_test.exs::"shell-exported config var beats the checked-in dev default" -- covers AC-04.7 -- status: green
 - Coverage: AC-04.1/.2/.3/.5/.7 test-covered; AC-04.4/.6 non-test with evidence on the AC line. All red first; landed 2026-08-04.
 
 ### WP-05
 
 - AT-05.1 test/config/production_surface_test.exs::"the library ships no production modules that answer test-only messages" (+ the scan-coverage and public-API siblings) -- covers AC-05.2 -- status: green. Structural on purpose and stated as such: with the clause gone the old message matches no `handle_info/2` and kills the process, so a behavioural test here would have to assert a crash
-- AT-05.2 test/config/cli_test.exs -- covers AC-05.3 -- status: green (eight tests, every one through `main/1`, so a specification that stopped matching fails them; includes the multi-word `set`, the coercion, and the list-as-chardata fix)
-- AT-05.3 test/deps_audit_test.exs -- covers AC-05.1 -- status: green, **restated**. As drafted it asserted declared == referenced, which would fail the build for any dependency with no in-repo call site -- the inference hv overruled, encoded as CI, and in direct contradiction of AC-05.1 as rewritten. It now names all thirteen dependencies with the reason each is kept and fails when one is added or removed without saying which
+- AT-05.2 `test/config/cli_test.exs` -- covers AC-05.3 -- status: green -- eight tests, every one through `main/1`, so a specification that stopped matching fails them; includes the multi-word `set`, the coercion, and the list-as-chardata fix
+- AT-05.3 `test/deps_audit_test.exs` -- covers AC-05.1 -- status: green, **restated**. As drafted it asserted declared == referenced, which would fail the build for any dependency with no in-repo call site -- the inference hv overruled, encoded as CI, and in direct contradiction of AC-05.1 as rewritten. It now names all thirteen dependencies with the reason each is kept and fails when one is added or removed without saying which
 - AT-05.4 (gate) critic-elixir clean at >= warning on changed files -- covers AC-05.6 -- status: green. Run 2026-08-04 at hv's instruction: 9 critical + 12 warning, all 21 closed, including a Protocol.UndefinedError that AC-02.2 had shipped an hour earlier on every error path. Four of the criticals were findings the Fable audit missed (C1 data loss on the write path, C3, C4, C5). Detail in impl.md; ten further ledger rows. The structural half of AC-05.6 is green in test/config/production_surface_test.exs::"the facade holds no CLI, conversion or watch-loop logic"
 - Coverage: AC-05.1/.2/.3/.6 covered; AC-05.4/.5 non-test with evidence on the AC line
 

@@ -1,0 +1,26 @@
+# .intentfiles -- WHICH DATABASE ARTEFACTS ALSO HAVE A REALISED FORM ON DISK.
+#
+# Written by `intent organize --default` from thread status: every WIP thread is
+# declared, and nothing else. Not Started, Triage, Hold, Completed and Cancelled
+# are NOT realised -- they live in the store, in full, and `intent st hydrate`
+# brings any of them back to disk on demand.
+#
+# REALISATION IS DRIVEN FROM THIS FILE. Commands change it; `intent organize`
+# realises it. Nothing recomputes it from status afterwards, so a write here is
+# a CHANGE TO STATE and never a REGENERATION of it -- which is why re-running
+# `--default` over a file that already exists changes nothing without `--force`.
+#
+# Many writers, one meaning. `st new` adds the id, `st done` and `st cancel`
+# remove it, `st hydrate` / `st dehydrate` do it directly, and a human may edit
+# it by hand. All of those are ordinary writers; none is privileged.
+#
+# THE DATABASE ALWAYS HOLDS EVERY ARTEFACT IN FULL. This file decides only what
+# is ALSO on disk, so dehydration is never a loss and hydration is a
+# regeneration rather than a restore.
+#
+# ABSENT is not EMPTY. A missing file means nobody has said, and everything
+# stays; a file present and declaring nothing means keep nothing.
+#
+# Grammar: `<SIGIL>:<ID>`, sigil STEELTHREAD -- the only one -- optional trailing
+# `# comment`. Nothing else. A line the parser cannot read ABORTS the run with
+# its line number.

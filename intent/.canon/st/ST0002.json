@@ -1,0 +1,679 @@
+{
+  "schema": "intent/thread@3.0",
+  "id": "ST0002",
+  "title": "Fable review of arca_config base code",
+  "slug": "fable-review-of-arca-config-base-code",
+  "status": "completed",
+  "created": "2026-08-04",
+  "completed": "2026-08-04T20:07:55Z",
+  "objective": "Audit the arca_config base code with Fable (analysis phase), triage the findings into recurring loss patterns (archetypes), ratify an acceptance contract, and remediate in risk-ordered work packages -- ending with arca_cli rebuilt against the result and its full suite green. Breaking changes are permitted (hv ruling); the current API need not be preserved.\n\nThe anchor contract, settled from the findings: **every public return value is a truthful account of what happened on disk, and every documented promise (precedence, notification, location) matches the code.** That is precisely where the library currently lies -- to callers (silent write failures), to subscribers (notification matrix), and to readers (README precedence inverted).",
+  "context": "arca_config is a ~2,800-line JSON file-backed config library (facade + GenServer + ETS cache + polling FileWatcher + legacy Cfg loader) with one live consumer: arca_cli, a git dep on `branch: main`. arca_cli's ST0011 (Fable audit -> breaking 0.5.0, 40/40 ACs) generated the handover that seeded this thread; its session stays live as the verification node (vc) and will run the real acceptance test -- rebuild arca_cli against the new arca_config and re-run its 710 tests.\n\n**Status, 2026-08-04**: remediation is complete and 0.3.0 is published at `03969fa` (CI green, 222 tests, coverage 90.47%). WP-01 through WP-05 are DONE. The contract stands at **34/38 -- BLOCKED**, and the four open ACs are the ones this thread was always going to end on: vc's ack of the removal log (AC-00.1), vc's rebuild of arca_cli (AC-00.2), vc's report (AC-06.1), and hv's tag (AC-06.3). See `release-verification.md` for the handover.\n\nThe analysis phase found 39 findings, 5 archetypes, execution probes confirming the critical claims (silent write success, stale ancestor cache, incoherent notification matrix, nondeterministic domain detection, env-override key collapse). One more finding (AF-40) came from a vc lead, and a later critic pass added 21 of its own -- four of them criticals the audit missed, including data loss on the write path. See `design.md` for the ledger and `acceptance.md` for the contract. Constraints that shaped remediation:\n\n- **Deletion tripwire**: arca_cli probes `function_exported?(Arca.Config, :register_change_callback, 2)` as a liveness proxy (`arca_cli lib/arca_cli.ex:118-130`). Zero callers is not sufficient grounds to retire a public symbol; the sibling-repo probe (arca_id, arca_dbutils, arca_notionex, arca_doc, arca_optimus: zero references) is on record in design.md.\n- arca_cli text-matches our error prose (`lib/arca_cli.ex:1083-1098`); the error-dialect unification must be coordinated with vc.\n- Fleet check confirmed drift between arca_cli's pinned `8b30615` and HEAD is mix.lock-only; behaviour is source-identical.",
+  "body": "## Related Steel Threads\n\n- ST0001 (COMPLETED) -- Registry integration, FileWatcher, callback system: built the surface this thread audits.\n- arca_cli ST0011 (cross-repo) -- the audit pattern this thread follows, and the downstream that verifies it.",
+  "preamble": "",
+  "related": [
+    {
+      "id": "ST0001",
+      "note": "COMPLETED) -- Registry integration, FileWatcher, callback system: built the surface this thread audits."
+    },
+    {
+      "id": "ST0011",
+      "note": "cross-repo) -- the audit pattern this thread follows, and the downstream that verifies it."
+    }
+  ],
+  "wps": [
+    {
+      "seq": 1,
+      "title": "Truthful returns: persistence failures surface",
+      "scope": "S",
+      "status": "done",
+      "objective": "Kill archetype AR-1 (success without effect): every write-shaped operation returns a truthful account of what happened on disk, and in-memory state never advances past a failed persist. Findings AF-01..AF-07 (design.md).",
+      "body": "## Deliverables\n\n- `Server.put/2`, `delete/1` propagate write failures; state/cache untouched on failure (probe P3 scenario turns red-first, then green)\n- `put!/delete!` raise on persistence failure; load failures surface as load errors, not key-misses\n- Cache fabricate-success rescues removed; honest cache-unavailable failure\n- `load_config_phase/0` aggregates override failures; enoent semantics per ruling R4\n- Changed tests flagged in impl.md ledger (switch_location_test nonexistent-path test is known-in-advance)\n\n## Dependencies\n\n- Contract ratification (hv) + ruling R4. First WP to land: later WPs' error paths build on truthful returns.",
+      "preamble": ""
+    },
+    {
+      "seq": 2,
+      "title": "One lookup path, one dialect, complete facade",
+      "scope": "S",
+      "status": "done",
+      "objective": "Kill archetype AR-2 (two of everything): one nested get/put/delete/write implementation, one canonical error dialect (ruling R1, coordinated with vc), a complete facade. Findings AF-08..AF-13, AF-16, AF-37 (design.md).",
+      "body": "## Deliverables\n\n- Cfg/Server duplication collapsed to one write path; every write registers exactly one watcher token\n- Canonical missing-key error shape across facade/Server/Cfg-successor/Map; four dialects gone\n- Facade gains delete/1, delete!/1, get_config_location/0 (arca_cli's phantom call becomes real)\n- Access.pop honest per ruling R7; dead {:ok, conf} clause + GenServer-meck test gone\n- LegacyCfg ownership resolved per AF-37\n\n## Dependencies\n\n- WP-01 (truthful returns underneath the unified path); rulings R1, R7; vc agreement on the error shape (arca_cli parses it).",
+      "preamble": ""
+    },
+    {
+      "seq": 3,
+      "title": "Notification and watcher coherence",
+      "scope": "S",
+      "status": "done",
+      "objective": "Kill archetype AR-3 (notifications describe a different system): one ratified notification matrix, a watcher that survives reality, a cache that tells the truth after writes. Findings AF-17..AF-22 (design.md).",
+      "body": "## Deliverables\n\n- Ratified matrix implemented + documented on subscribe/register_change_callback/add_callback; per-key fires on external/reload/switch; 0-arity double-fire gone\n- Watcher survives malformed JSON (log, keep last-good, keep watching) and recovers on next valid write\n- Post-write suppression window no longer swallows external edits (token identity or re-check)\n- Ancestor cache coherent after nested put (probe P2 scenario red-first)\n- file_watcher_test suppress-everything test rewritten (changed-tests ledger)\n\n## Dependencies\n\n- WP-01, WP-02 (matrix rides the unified write path).",
+      "preamble": ""
+    },
+    {
+      "seq": 4,
+      "title": "Location model: precedence, domain, isolation",
+      "scope": "S",
+      "status": "done",
+      "objective": "Kill archetype AR-4 (location is ambient guesswork): ruled precedence documented once and tested end-to-end, deterministic domain, stable resolution, a suite that leaves the world exactly as it found it. Findings AF-23..AF-31 (design.md).",
+      "body": "## Deliverables\n\n- Precedence per ruling R2; README rewritten (inverted precedence, false home-dir story, .env scope, one version string)\n- config_domain deterministic; started-applications heuristic (probe P1 -> :elixir_uuid) removed\n- No file-existence flip in resolution\n- Suite isolation: no repo-root/parent/HOME writes, exact env restore, doctests clean up, git status clean after mix test\n- async: false justified per module or lifted\n\n## Dependencies\n\n- Ruling R2. Independent of WP-02/03 except shared files; sequence after WP-03 to avoid churn.",
+      "preamble": ""
+    },
+    {
+      "seq": 5,
+      "title": "Surface and dependency pruning",
+      "scope": "S",
+      "status": "done",
+      "objective": "Kill archetype AR-5 (shipped scaffolding): the product surface carries only the product. Findings AF-32..AF-36, AF-38, AF-39 plus AF-11/12/14/15 residue (design.md).",
+      "body": "## Deliverables\n\n- Deps cut to referenced set (fleet-probe evidence per removal, AC-00.1); dotenv/certifi/castore/owl/table_rex/ucwidth/pathex/elixir_uuid/ok resolved per ruling R3\n- CLI ruling R3 executed: single dispatch or escript removed; facade thinned to delegation (CLI/watch_loop/convert extracted)\n- Test backdoors out of Server/FileWatcher; dead support code removed\n- One CI workflow per ruling R6; cruft (AGENTS.md.bak, .backup/, committed .arca_config artifacts, debug scripts) resolved\n- critic-elixir clean at >= warning on changed files\n\n## Dependencies\n\n- Rulings R3, R6. After WP-02 (facade shape settles first).",
+      "preamble": ""
+    },
+    {
+      "seq": 6,
+      "title": "Downstream verification and release",
+      "scope": "S",
+      "status": "not-started",
+      "objective": "Prove the release against the one real consumer: vc rebuilds arca_cli on the final arca_config and its full suite passes; ship with migration notes, CHANGELOG, version, tag. ST-level ACs AC-00.1..3 close here.",
+      "body": "## Deliverables\n\n- vc report: arca_cli mix.lock advanced from 8b30615, suite green (or failures triaged back into WPs)\n- Migration notes covering every breaking change + the three now-removable arca_cli defensive strata\n- usage-rules.md carries real consumer API guidance\n- CHANGELOG, semver per ruling R5, tag held by hv\n\n## Dependencies\n\n- All prior WPs; rulings R5; vc execution (hv carries traffic between repos).",
+      "preamble": ""
+    }
+  ],
+  "criteria": [
+    {
+      "id": "AC-00.1",
+      "text": "No public symbol is retired without the sibling-fleet probe (`function_exported?` / `Code.ensure_loaded?` / direct refs) re-run at removal time and recorded -- the `register_change_callback/2` tripwire (arca_cli liveness proxy) survives or arca_cli is migrated first",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "impl.md removal log + vc ack below"
+      }
+    },
+    {
+      "id": "AC-00.2",
+      "text": "arca_cli rebuilt against the final arca_config (mix.lock advanced from 8b30615) and its full suite passes, executed by vc",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "vc report at `intent/st/ST0002/vc-rebuild-report.md`"
+      }
+    },
+    {
+      "id": "AC-00.3",
+      "text": "Every test changed because it asserted a defect is listed in impl.md's changed-tests ledger with before/after behaviour",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "impl.md changed-tests ledger, 10 rows as at 2026-08-04, covering WP-01 (7), WP-02 (3) and WP-05 (2); re-checked at ST close because AC-02.2 will add rows"
+      }
+    },
+    {
+      "id": "AC-00.4",
+      "text": "(RATIFIED by hv 2026-08-04 -- scope addition accepted, contract is 38) What downstream relies on arca_config for is identified and pinned by tests **here**, so the consumer contract is enforced rather than assumed. Arises from hv's ruling on the dependency retraction: in-repo silence over public surface signals untested contract surface, and the remedy is coverage, not deletion. Covered by AT-00.1",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-01.1",
+      "text": "`put/2` and `delete/1` return `{:error, _}` when persistence fails, and neither server state nor cache advances past the failed write (a subsequent `get` reflects disk, not the phantom value)",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-01.2",
+      "text": "`put!/2` and `delete!/1` raise on persistence failure",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-01.3",
+      "text": "A failed initial/on-demand config load surfaces as a load error to the caller, not as \"key not found\" for every key thereafter",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-01.4",
+      "text": "Cache API clauses that fabricate success when the cache is unavailable are removed; cache unavailability is an honest failure distinct from key-miss",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-01.5",
+      "text": "A failed env-override application is surfaced (aggregate result from `load_config_phase/0`), not silently dropped",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-01.6",
+      "text": "(ruling R4) `switch_config_location/1` to a nonexistent path returns an error and leaves the previous location live; enoent-as-empty-config survives only for the documented first-run bootstrap path",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-02.1",
+      "text": "Exactly one nested get/put/delete/write implementation remains; every public write path registers the watcher write-token exactly once (no self-notification fork) -- the token clause is moot: WP-03 removed the token mechanism, so AT-02.1 pins the behaviour it protected",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-02.2",
+      "text": "(ruling R1) A missing key yields one canonical machine-matchable error shape from every entry point (facade, Server, Cfg-or-successor, Map); the four current dialects are gone",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-02.3",
+      "text": "The facade exposes `delete/1`, `delete!/1`, and a location-inspection API (`get_config_location/0` returning path, file, and source) such that arca_cli's `cli_command_helper.ex:350` call works unmodified",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-02.4",
+      "text": "(ruling R7) `Access.pop/2` and `get_and_update/3`'s `:pop` actually delete through the one write path, or the Access implementation is removed",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-02.5",
+      "text": "The dead `{:ok, conf}` clause in `notify_external_change/0` is gone, `:get_config` has a single reply shape, and no test mocks GenServer to reach dead code",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-03.1",
+      "text": "A ratified notification matrix (channels x mutation paths) is implemented: each channel fires exactly once per mutation event on every path it covers, and the covered set is documented on `subscribe/1`, `register_change_callback/2`, and `add_callback/1`",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-03.2",
+      "text": "Per-key subscribers are notified on external file changes (the watcher's reason to exist) and on reload/switch, per the ratified matrix",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-03.3",
+      "text": "0-arity callbacks fire exactly once per externally-detected change (double-fire eliminated)",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-03.4",
+      "text": "The watcher survives malformed JSON: parse failure logs, retains last-good state, keeps watching (no crash-to-dormancy); recovery detects the next valid write",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-03.5",
+      "text": "An external edit landing inside the post-write suppression window is not lost (token identity compared, or equivalent re-check)",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-03.6",
+      "text": "After `put/2` returns, a `get/1` of any ancestor of the written path reflects the write (cache coherence)",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-04.1",
+      "text": "(ruling R2) Precedence is ruled, implemented, and documented identically in README and moduledoc, with a single test asserting the full chain end-to-end",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-04.2",
+      "text": "`config_domain/0` is deterministic: explicit configuration or a documented stable default; the started-applications heuristic (probe P1: `:elixir_uuid`) is removed",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-04.3",
+      "text": "Location resolution is stable within a session: no file-existence flip between reads and writes",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-04.4",
+      "text": "README matches behaviour: precedence order, actual default paths (CWD-relative or ruled otherwise), `.env` section corrected to project-local scope, one version string",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "README diff reviewed against AC-04.1 test; precedence table now matches `Cfg`'s moduledoc and the test line for line, the location story says CWD-relative, the `.env` section says plainly that it is this repo's own dev setup and not a library feature, and the version lives only in mix.exs (`config.exs`'s copy removed, the CLI spec reads `Application.spec/2`, README's two install blocks reconciled)"
+      }
+    },
+    {
+      "id": "AC-04.5",
+      "text": "After `mix test`, the repo tree is clean: no writes to the repo root, its parent, or HOME; `git status --porcelain` empty; env mutations restored exactly (superset-restore fixed; doctests clean up)",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-04.6",
+      "text": "Each remaining `async: false` carries a reason comment, or the module is `async: true`",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "grep over test/"
+      }
+    },
+    {
+      "id": "AC-04.7",
+      "text": "`config/.env` no longer overrides shell-exported config vars during config evaluation: an env var exported by the developer or CI wins over the checked-in dev default, and the resolution path is identical on a fresh clone (which has no `config/.env`)",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-05.1",
+      "text": "Every dependency removal carries positive downstream evidence and is proven by the WP-06 arca_cli rebuild; **the default is KEEP**. In-repo non-reference is not grounds for removal (hv ruling on the dependency retraction: unreferenced-here over public surface means untested contract surface, not dead surface). A dep with no downstream evidence either way stays, and gets a note in impl.md rather than a deletion",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-05.2",
+      "text": "Test backdoors (`{:reset_for_test, ...}`, `{:reset_to_dormant, ...}`) are out of production modules, with equivalent test control via supervised lifecycle",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-05.3",
+      "text": "(ruling R3) The CLI ruling is executed: either a single dispatch path through the Optimus spec in an extracted module, or the escript is removed; no unreachable command spec remains",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-05.4",
+      "text": "One CI workflow, matrix per ruling R6",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "`test.yml` deleted, `ci.yml` rewritten as one matrix (1.18.0/OTP 27, 1.18.4/OTP 28, 1.20.2/OTP 29 per R6), and both workflows' `ARCA_CONFIG_CONFIG_PATH: .arca_config` removed (2026-08-04; green run pending the next push, which is hv's to observe)"
+      }
+    },
+    {
+      "id": "AC-05.5",
+      "text": "Cruft removed from version control",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "`git rm` of four `.arca_config/` artifacts (including a 2024 OAuth config and a probe's `write_test.json`), three March-2025 debug scripts, and `.github/workflows/test.yml`; the commented-out `optimus` hex line; `.arca_config/` added to `.gitignore`. `AGENTS.md.bak` and `.backup/` were already untracked and ignored, so there was nothing to remove from version control (2026-08-04)"
+      }
+    },
+    {
+      "id": "AC-05.6",
+      "text": "The facade module contains delegation and documentation only; CLI/conversion/watch-loop logic lives elsewhere; critic-elixir pass on changed files is clean at severity >= warning",
+      "kind": "test",
+      "state": {
+        "is": "computed"
+      }
+    },
+    {
+      "id": "AC-06.1",
+      "text": "vc's rebuild of arca_cli against the final arca_config passes its full suite; failures triaged to migration notes or fixed here",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "vc report cited in impl.md"
+      }
+    },
+    {
+      "id": "AC-06.2",
+      "text": "Migration notes list every breaking change with the replacement API",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "CHANGELOG.md, written 2026-08-04, with a per-area breakdown, before/after error shapes, and an arca_cli section carrying the exact clause its rebuild needs. **Corrected while writing it**: the AC named \"three arca_cli defensive strata now removable (error-prose matcher, Server.delete bypass, get_config_location shim)\" and only the first exists. A grep of arca_cli/lib finds no delete bypass and no location shim"
+      }
+    },
+    {
+      "id": "AC-06.3",
+      "text": "CHANGELOG + version bump per ruling R5 + tag by hv",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "CHANGELOG.md written and version bumped to 0.3.0 in mix.exs and README; annotated tag `v0.3.0` created at hv's instruction 2026-08-04 and pushed to upstream, pointing at `ccd8fb5`"
+      }
+    },
+    {
+      "id": "AC-06.4",
+      "text": "`usage-rules.md` (or successor consumer doc) carries actual arca_config API guidance for consumer LLM sessions",
+      "kind": "non-test",
+      "state": {
+        "is": "satisfied",
+        "evidence": "rewritten 2026-08-04 (AF-39). It now leads with a consumer DO/NEVER contract"
+      }
+    }
+  ],
+  "tests": [
+    {
+      "id": "AT-00.1",
+      "kind": "test",
+      "file": "test/config/consumer_contract_test.exs",
+      "covers": [
+        "AC-00.4"
+      ],
+      "status": "green",
+      "note": "eight tests, each citing the arca_cli file:line that makes the call; red-first on the facade gap, closed by AC-02.3 in the same commit"
+    },
+    {
+      "id": "AT-01.1",
+      "kind": "test",
+      "covers": [
+        "AC-01.1"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/server_test.exs::\"put returns error and preserves state on unwritable location\" (+ the delete twin)"
+      }
+    },
+    {
+      "id": "AT-01.2",
+      "kind": "test",
+      "covers": [
+        "AC-01.2"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/server_test.exs::\"put!/delete! raise on persistence failure\""
+      }
+    },
+    {
+      "id": "AT-01.3",
+      "kind": "test",
+      "covers": [
+        "AC-01.3"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/server_test.exs::\"failed load surfaces as load error not key-miss\""
+      }
+    },
+    {
+      "id": "AT-01.4",
+      "kind": "test",
+      "covers": [
+        "AC-01.4"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/cache_test.exs::\"cache unavailability is distinct from key-miss\""
+      }
+    },
+    {
+      "id": "AT-01.5",
+      "kind": "test",
+      "covers": [
+        "AC-01.5"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/phase_based_test.exs::\"failed override surfaces from load_config_phase\""
+      }
+    },
+    {
+      "id": "AT-01.6",
+      "kind": "test",
+      "covers": [
+        "AC-01.6"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/switch_location_test.exs::\"switch to nonexistent path errors and preserves location\""
+      }
+    },
+    {
+      "id": "AT-02.1",
+      "kind": "test",
+      "covers": [
+        "AC-02.1"
+      ],
+      "status": "green",
+      "note": "disk, cache and subscribers move together on every public write -- (red-first). Restated: the AC asked for the watcher write-token to be registered once per path, and WP-03 removed the token mechanism outright, so the AT pins the behaviour the token existed to protect",
+      "legacy": {
+        "raw": "test/config/server_test.exs::\"a write through Cfg has the same effect as a write through Server\" (+ the read sibling)"
+      }
+    },
+    {
+      "id": "AT-02.2",
+      "kind": "test",
+      "file": "test/config/error_dialect_test.exs",
+      "covers": [
+        "AC-02.2"
+      ],
+      "status": "green",
+      "note": "twelve tests, nine red first: the shape from all four entry points, the key path in the error, the cause preserved on load and parse failures, the rendering, and the two shapes that deliberately stay as they are"
+    },
+    {
+      "id": "AT-02.3",
+      "kind": "test",
+      "covers": [
+        "AC-02.3"
+      ],
+      "status": "green",
+      "note": "(red-first). Folded into the consumer contract module rather than a separate facade_test.exs: the reason the facade needs these is that a consumer expects them, so the assertion belongs where the consumer contract lives",
+      "legacy": {
+        "raw": "covered by AT-00.1 in test/config/consumer_contract_test.exs::\"the facade exposes the location and delete API its docs promise\""
+      }
+    },
+    {
+      "id": "AT-02.4",
+      "kind": "test",
+      "covers": [
+        "AC-02.4"
+      ],
+      "status": "green",
+      "note": "red-first",
+      "legacy": {
+        "raw": "test/config/map_test.exs::\"pop deletes through the one write path\" (+ missing-key and get_and_update siblings)"
+      }
+    },
+    {
+      "id": "AT-02.5",
+      "kind": "test",
+      "covers": [
+        "AC-02.5"
+      ],
+      "status": "green",
+      "note": "Characterisation rather than red-first, stated plainly: the substance of this AC is removing an unreachable clause and the mock that fabricated a reply to reach it, so the AT holds the real behaviour across the removal rather than failing before it",
+      "legacy": {
+        "raw": "test/config/server_test.exs::\"the :get_config call answers with the config map itself\" (+ the notify_external_change sibling)"
+      }
+    },
+    {
+      "id": "AT-03.1",
+      "kind": "test",
+      "covers": [
+        "AC-03.1",
+        "AC-03.2",
+        "AC-03.3"
+      ],
+      "status": "green",
+      "note": "with nine siblings in the same module walking reload, external detect and switch, the ancestor-replacement case, the unchanged-value cases, and the two re-entrancy pins",
+      "legacy": {
+        "raw": "test/config/notification_matrix_test.exs::\"matrix: each channel fires once per covered path\""
+      }
+    },
+    {
+      "id": "AT-03.2",
+      "kind": "test",
+      "covers": [
+        "AC-03.4"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/file_watcher_test.exs::\"watcher survives malformed JSON and recovers\""
+      }
+    },
+    {
+      "id": "AT-03.3",
+      "kind": "test",
+      "covers": [
+        "AC-03.5"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/file_watcher_test.exs::\"external edit within post-write window is detected\""
+      }
+    },
+    {
+      "id": "AT-03.4",
+      "kind": "test",
+      "covers": [
+        "AC-03.6"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/server_test.exs::\"ancestor get reflects nested put (cache coherence)\""
+      }
+    },
+    {
+      "id": "AT-04.1",
+      "kind": "test",
+      "covers": [
+        "AC-04.1"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/cfg_test.exs::\"precedence chain end-to-end\""
+      }
+    },
+    {
+      "id": "AT-04.2",
+      "kind": "test",
+      "covers": [
+        "AC-04.2"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/cfg_test.exs::\"config_domain deterministic without heuristic\""
+      }
+    },
+    {
+      "id": "AT-04.3",
+      "kind": "test",
+      "covers": [
+        "AC-04.3"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/cfg_test.exs::\"location stable across file creation\""
+      }
+    },
+    {
+      "id": "AT-04.4",
+      "kind": "test",
+      "covers": [
+        "AC-04.5"
+      ],
+      "status": "green",
+      "note": "path clarified from `test/support/isolation_check.exs`: ExUnit only runs `*_test.exs` under `test/`, so the drafted path would never have executed -- vc's own reachability lens, applied to my own contract. The comparison helper lives at `test/support/isolation.ex` and the standing guard is in `test/test_helper.exs`",
+      "legacy": {
+        "raw": "**test/isolation_test.exs**::\"suite leaves repo tree and env exactly as found\""
+      }
+    },
+    {
+      "id": "AT-04.5",
+      "kind": "test",
+      "covers": [
+        "AC-04.7"
+      ],
+      "status": "green",
+      "legacy": {
+        "raw": "test/config/cfg_test.exs::\"shell-exported config var beats the checked-in dev default\""
+      }
+    },
+    {
+      "id": "AT-05.1",
+      "kind": "test",
+      "covers": [
+        "AC-05.2"
+      ],
+      "status": "green",
+      "note": "Structural on purpose and stated as such: with the clause gone the old message matches no `handle_info/2` and kills the process, so a behavioural test here would have to assert a crash",
+      "legacy": {
+        "raw": "test/config/production_surface_test.exs::\"the library ships no production modules that answer test-only messages\" (+ the scan-coverage and public-API siblings)"
+      }
+    },
+    {
+      "id": "AT-05.2",
+      "kind": "test",
+      "file": "test/config/cli_test.exs",
+      "covers": [
+        "AC-05.3"
+      ],
+      "status": "green",
+      "note": "eight tests, every one through `main/1`, so a specification that stopped matching fails them; includes the multi-word `set`, the coercion, and the list-as-chardata fix"
+    },
+    {
+      "id": "AT-05.3",
+      "kind": "test",
+      "file": "test/deps_audit_test.exs",
+      "covers": [
+        "AC-05.1"
+      ],
+      "status": "green",
+      "note": "the inference hv overruled, encoded as CI, and in direct contradiction of AC-05.1 as rewritten. It now names all thirteen dependencies with the reason each is kept and fails when one is added or removed without saying which -- **restated**. As drafted it asserted declared == referenced, which would fail the build for any dependency with no in-repo call site"
+    },
+    {
+      "id": "AT-05.4",
+      "kind": "test",
+      "covers": [
+        "AC-05.6"
+      ],
+      "status": "green",
+      "note": "Run 2026-08-04 at hv's instruction: 9 critical + 12 warning, all 21 closed, including a Protocol.UndefinedError that AC-02.2 had shipped an hour earlier on every error path. Four of the criticals were findings the Fable audit missed (C1 data loss on the write path, C3, C4, C5). Detail in impl.md; ten further ledger rows. The structural half of AC-05.6 is green in test/config/production_surface_test.exs::\"the facade holds no CLI, conversion or watch-loop logic\"",
+      "legacy": {
+        "raw": "(gate) critic-elixir clean at >= warning on changed files"
+      }
+    }
+  ]
+}
