@@ -19,7 +19,7 @@ _(none)_
   - [x] 03: Notification and watcher coherence
   - [x] 04: Location model: precedence, domain, isolation
   - [x] 05: Surface and dependency pruning
-  - [ ] 06: Downstream verification and release
+  - [x] 06: Downstream verification and release
 
 ---
 

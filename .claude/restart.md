@@ -2,9 +2,9 @@
 
 ## WIP focus
 
-**ST0002 is DONE and CLOSED. 38/38 PASS.** `v0.3.0` published, tagged and CI-green. The thread is in `intent/st/COMPLETED/ST0002`.
+**ST0002 is DONE and CLOSED. 38/38 PASS.** `v0.3.0` published, tagged and CI-green. The thread is in `intent/history/ST0002`.
 
-vc closed the final three ACs on 2026-08-04 under release control: the removal-log ack (verified by diffing the public `def` surface, not by reading the log), the arca_cli rebuild (782 green against this release), and the report at `intent/st/COMPLETED/ST0002/vc-rebuild-report.md`.
+vc closed the final three ACs on 2026-08-04 under release control: the removal-log ack (verified by diffing the public `def` surface, not by reading the log), the arca_cli rebuild (782 green against this release), and the report at `intent/history/ST0002/vc-rebuild-report.md`.
 
 **Nothing is outstanding in this repository.** One MED lives downstream as `arca_cli/intent/issues/OPEN/0002`. Three of vc's close-out commits are unpushed to upstream -- pushing is hv's call.
 

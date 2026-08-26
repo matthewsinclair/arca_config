@@ -1,5 +1,8 @@
 {
   "author": "matts",
+  "backup": {
+    "schedule": "daily"
+  },
   "intent_dir": "intent",
   "intent_version": "3.0.0",
   "languages": [
