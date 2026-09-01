@@ -1059,6 +1059,23 @@ print_run_referent() {
 #      That gives the meter a free self-check: it detects its own obsolescence,
 #      and it announces it to the one person who will never read a note about a
 #      ratio -- whoever changed the runner underneath it.
+#   4. **It assumes THE WALL IT IS MEASURING IS A TEST RUN.** T0 is set in
+#      open_run_log, so the wall is the GATE's, and a gate that wraps other
+#      verbs charges their time to a denominator made only of test suites.
+#      `fullcycle` does exactly that: intent/dc measured `4.87x -- 170s wall
+#      against 34.91s` on hv's run, where 103 of those seconds were a cold
+#      release build and `clean`, and the test phase alone was 1.75x -- quiet
+#      on the scale above. The arithmetic was exact and the SUBJECT was wrong.
+#
+#      **AND LIMIT 3's SELF-CHECK CANNOT REACH THIS ONE, BY CONSTRUCTION.**
+#      Sub-1 catches parallelism, which pushes the ratio DOWN. Non-test work
+#      pushes it UP, into the range that reads as a real finding. So the
+#      meter's only alarm fires in the direction meaning "my model broke" and
+#      is silent in the direction meaning "your machine is loud" -- and that
+#      is the direction nobody audits. The line below therefore names its
+#      numerator as the GATE's wall rather than letting "overhead" imply the
+#      tests; whether such a gate should time only its test phase is issue
+#      0049 and is not settled here.
 #
 # Granularity is whole seconds (`date +%s`; perl is not assumable -- see the
 # shasum note in lib/helpers). That is ample for a meter whose job is separating
@@ -1090,7 +1107,7 @@ print_run_overhead() {
       if (w < s) {
         printf "overhead: UNDEFINED -- wall %ds is BELOW the %ss the runner reports for %d suite(s), so the binaries are not running sequentially and this meter'"'"'s model does not hold.\n", w, s, n
       } else {
-        printf "overhead: %.2fx -- %ds wall against %ss of reported test time across %d suite(s).\n", w / s, w, s, n
+        printf "overhead: %.2fx -- %ds of GATE wall against %ss of reported test time across %d suite(s). The wall covers everything this gate ran, tests or not.\n", w / s, w, s, n
       }
     }'
 }

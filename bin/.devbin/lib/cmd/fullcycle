@@ -72,8 +72,24 @@ _fullcycle_phases() {
 #
 # It is kept because a project with NO build verb certainly cannot restore, and
 # refusing those early is still right. What it cannot do is bless the ones that
-# have a verb, so the real guarantee is measured after the fact by
+# have a verb, so such guarantee as exists is measured after the fact by
 # _fullcycle_path_links below rather than predicted here.
+#
+# AND THAT GUARANTEE IS CONDITIONAL, WHICH THIS COMMENT ASSERTED FLATLY UNTIL
+# 2026-09-01. `_fullcycle_path_links` measures PATH SYMLINKS. On an estate with
+# none, the after-half has an empty list to walk, so it fires nothing and the
+# cycle asserts NOTHING about whether the build restored anything -- while
+# still finishing rc=0. Found by laksa/dc, in the estate that proves it: Laksa
+# has no PATH symlinks, so Conflab's exact defect would land there as a clean
+# green, with the tripwire that caught it in Conflab simply absent.
+#
+# The instrument answers "did I darken anything that was lit". It cannot answer
+# "did the rebuild produce anything at all", and those two coincide only where
+# a PATH symlink happens to exist. **So the run now SAYS when the check was
+# vacuous** -- see _fullcycle_run. That is not the fix for the underlying gap
+# (issue 0048); it is the refusal to let an empty-set green read as a measured
+# one, which is the same discipline this project's own test harness applies to
+# itself when it prints CONTROL IS VACUOUS, NOT RUN.
 _fullcycle_can_rebuild() {
   "$1" build --help >/dev/null 2>&1
 }
@@ -184,8 +200,14 @@ _fullcycle_run() {
   while IFS= read -r link; do
     [ -n "$link" ] && atrisk+=("$link")
   done < <(_fullcycle_path_links live)
-  [ "${#atrisk[@]}" -eq 0 ] ||
+  # REPORTED IN BOTH DIRECTIONS. Printing only the non-zero case made a cycle
+  # that watched nothing look exactly like one that watched everything, which
+  # is the defect this verb exists to prevent, committed by the verb itself.
+  if [ "${#atrisk[@]}" -gt 0 ]; then
     printf '    watching: %s PATH symlink(s) resolving into this tree\n' "${#atrisk[@]}"
+  else
+    printf '    watching: NOTHING -- no PATH symlink resolves into this tree.\n'
+  fi
 
 
   printf '\n    FULLCYCLE STARTING -- this REMOVES the cargo build trees.\n'
@@ -267,6 +289,16 @@ _fullcycle_run() {
   # Checked on EVERY path, success included, and it makes the run RED. The
   # remedy an operator meets otherwise is a pre-commit gate refusing to let them
   # commit, with a message naming the tool that is absent.
+  # AN EMPTY WATCH LIST IS DECLARED, NOT PASSED OVER. Until 2026-09-01 the
+  # whole block below was skipped when atrisk was empty and nothing was said,
+  # so a cycle that measured nothing and a cycle that measured everything
+  # emitted the identical rc=0 and the identical silence (laksa/dc).
+  if [ "$cleaned" = 1 ] && [ "${#atrisk[@]}" -eq 0 ]; then
+    printf '\n    ARTEFACT CHECK VACUOUS -- nothing was watched, so this cycle made NO\n'
+    printf '    assertion about whether the build restored its release artefacts.\n'
+    printf '    A dev-profile build would finish here green and unremarked.\n'
+  fi
+
   if [ "$cleaned" = 1 ] && [ "${#atrisk[@]}" -gt 0 ]; then
     for link in "${atrisk[@]}"; do
       [ -e "$link" ] && continue
