@@ -189,8 +189,26 @@ _fullcycle_run() {
 
 
   printf '\n    FULLCYCLE STARTING -- this REMOVES the cargo build trees.\n'
-  [ "$force" = 1 ] ||
-    printf '    No --force given: clean will ask, or refuse if there is no terminal.\n'
+  # TWO REFUSALS LIVE IN clean AND THIS LINE NAMED THE WRONG ONE. The
+  # blocked-binaries `die` fires FIRST and has no tty test in it at all;
+  # `_clean_confirm`'s no-tty refusal is further down and is reached only when
+  # nothing is blocked. The old wording -- "clean will ask, or refuse if there
+  # is no terminal" -- described the second, so hv was refused WITH a terminal
+  # and sent hunting a tty problem that does not exist (intent/dc, 2026-09-01).
+  # A WRONG MECHANISM IN AN ERROR PATH IS WORSE THAN NO MECHANISM: it is
+  # actionable, in the wrong direction.
+  #
+  # It names both and predicts NEITHER on purpose. `atrisk` is in scope here and
+  # is tempting, but it is not clean's `blocked` set: atrisk is any live PATH
+  # link into this tree, blocked is a PATH binary inside a tree clean is about
+  # to remove. Predicting the refusal from the wider set would replace a false
+  # sentence with a differently false one.
+  [ "$force" = 1 ] || {
+    printf '    No --force given, and clean has TWO refusals:\n'
+    printf '      - OUTRIGHT, TERMINAL OR NOT, if a PATH binary resolves into a\n'
+    printf '        tree it would remove; --force is the only way through.\n'
+    printf '      - otherwise it asks on the tty, and refuses without one.\n'
+  }
 
   while IFS= read -r phase; do
     [ -n "$phase" ] || continue

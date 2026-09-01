@@ -3,7 +3,7 @@
 # Files not listed here -- config.yaml, cmd/, help/ -- belong to the project.
 # devbin_version: 0.1.0
 # source: /Users/matts/Devel/prj/Devbin
-# source_commit: f6b24035e944093349e3632824172b265b86a134
+# source_commit: bd323eabb74a012b8ede8291e32a9cfcdec64d86
 9e7a1bd622e87fa83aa90f1416fea5a31a239197ba8d81a6b8430ce90ed5ee77  bin/devbin
 40b8fb23b8623a6c3a7d2e55aea6e72d4310d1041ed00407b416ad172cbd211c  bin/.devbin/lib/builtins
 f1b5ef34c4ef43e3eef92c69f52a90d61a4ce608995f1be04bb2e5e9684f8058  bin/.devbin/lib/cmd/check
@@ -14,7 +14,7 @@ f1b5ef34c4ef43e3eef92c69f52a90d61a4ce608995f1be04bb2e5e9684f8058  bin/.devbin/li
 44333ff440e0db228e3abee832359896336623d3d6f07b1090b1f576b34e1bbe  bin/.devbin/lib/cmd/docs
 4f3487f8f862c4ae9ff8c84e09d271c235edd37049a1da2ff796623f46a7b21e  bin/.devbin/lib/cmd/doctor
 3cdb7f8d8aea2d5a1021fc10d2756d39f61c8168646a9dd3316563b94fae12e5  bin/.devbin/lib/cmd/fmt
-e5e755246b63bf82afb5d00338666f1519cfec2e086bd5a1fb817e9e5a5ad61a  bin/.devbin/lib/cmd/fullcycle
+b4e7a14605a9a61c82ea208639c2c26fb4bb4800c013a2654830cd7998f18314  bin/.devbin/lib/cmd/fullcycle
 ddef9a6e98a8f9c1fe41edac7d3c7a8d2c940fc7a5ccde683d6458fec32fb76f  bin/.devbin/lib/cmd/install
 37831edf4f91002c12dab2362ec58d68ff6aa792f15a7b07761c3e7c8db88092  bin/.devbin/lib/cmd/new
 b81f9f2bd800d2f96ab2fae8d0c73d5b031ec002944f2b94f330555d431fff11  bin/.devbin/lib/cmd/repl
