@@ -23,6 +23,17 @@ set -euo pipefail
 . "${DEVBIN_LIB:?run me through bin/devbin}/helpers"
 # shellcheck source=lib/runlog
 . "$DEVBIN_LIB/runlog"
+# shellcheck source=lib/config
+. "$DEVBIN_LIB/config"
+
+# THE CONFIG CACHE DOES NOT CROSS INTO A HANDLER -- a built-in handler is a
+# separate process, so the dispatcher's `cfg_load` is not in scope here and
+# every accessor would answer empty. Answering empty is the dangerous shape
+# rather than a loud one: the restore phase would read "nothing declared" in a
+# project that had declared one, and silently decline to put back what it
+# deleted.
+[ -z "${DEVBIN_DIR:-}" ] || [ ! -f "$DEVBIN_DIR/config.yaml" ] ||
+  cfg_load "$DEVBIN_DIR/config.yaml" >/dev/null 2>&1 || true
 
 _fullcycle_usage() {
   printf 'usage: %s fullcycle [--dry-run] [--force]\n\n' "${DEVBIN_INVOKE:-bin/devbin}"
@@ -255,7 +266,7 @@ _fullcycle_consent_notice() {
 }
 
 _fullcycle_run() {
-  local force="$1" launcher phase rc=0 prc start elapsed cleaned=0 link broken=0
+  local force="$1" launcher phase rc=0 prc start elapsed cleaned=0 link broken=0 restore_cmd
   local -a pass=()
   # ALWAYS `--force-blocked`, NEVER `--force` UNASKED (issue 0047, hv: option 3).
   #
@@ -393,18 +404,56 @@ _fullcycle_run() {
     done
     if [ "$dark" -gt 0 ]; then
       printf '\n    RESTORING -- %d watched link(s) are dark after the build.\n' "$dark"
-      printf '    The build phase did not repopulate release/, so this runs a RELEASE build.\n'
-      start=$SECONDS
-      prc=0
-      # cargo directly, not through `build all`: `build all` is what just failed
-      # to produce these artefacts, so running it again is the one thing known
-      # not to work. fullcycle is already a rust-specific verb -- its phases are
-      # `clean rust` and `test rust` -- so reaching for cargo here widens
-      # nothing that was not already narrow.
-      ( cd "$PROJECT_ROOT" && cargo build --release ) || prc=$?
-      elapsed=$((SECONDS - start))
-      printf '    phase: %-14s %8s  rc=%d\n' "restore" "$(fmt_duration "$elapsed")" "$prc"
-      [ "$prc" -eq 0 ] || rc="$prc"
+      printf '    The build phase did not repopulate release/.\n'
+      # THE PROJECT SUPPLIES THE RELEASE BUILD. devbin does not reach for cargo.
+      #
+      # THIS SHIPPED AS `( cd "$PROJECT_ROOT" && cargo build --release )` FOR
+      # ONE DAY AND WAS WRONG, and the argument in favour was good enough to
+      # survive review: `build all` is what just failed to produce these
+      # artefacts, so running it again is the one thing known not to work, and
+      # fullcycle is already rust-specific. Both halves are still true. The
+      # premise they rest on is not: that a release build is devbin's to
+      # perform.
+      #
+      # MEASURED, by the one instrument on the estate that could see it. Intent
+      # guards `native/rust/target/release/` because four nodes invoke that
+      # artefact, and a build from a dirty tree poisons it for all of them --
+      # so every release build there must go through a guarded path that
+      # refuses a dirty tree. Vendored in, this line was a NEW UNGUARDED
+      # ENTRANCE, and Intent's shared-artefact guard named it by file and line
+      # on the first commit that carried it. Twelve other estates took the same
+      # bytes and have no such guard, which is not the same as having no such
+      # exposure.
+      #
+      # AND THE OBVIOUS ALTERNATIVE IS WORSE. `build release` looks like a
+      # portable spelling and is not: at Intent that arm is INTERACTIVE and
+      # pushes. Guessing a verb by name would have turned a restore into a
+      # publish.
+      #
+      # So the rule is the one this file already applies to its refusal: devbin
+      # cannot know whether a release build in this tree is safe to run, and
+      # FAIL-CLOSED is the safe direction. A project that wants the restore
+      # declares what performs it. Undeclared, the cycle reports what it could
+      # not put back -- which is the state 0050 found, now with the reason and
+      # the remedy attached instead of silence.
+      restore_cmd="$(cfg_get "commands.fullcycle.restore")"
+      if [ -z "$restore_cmd" ]; then
+        printf '    NO RESTORE COMMAND DECLARED -- this cycle cannot put them back.\n'
+        printf '    devbin will not run a release build it cannot know is safe here:\n'
+        printf '    at least one estate guards its release path because several nodes\n'
+        printf '    invoke the artefact, and a build from a dirty tree poisons it.\n'
+        printf '    Declare one and this phase runs:  commands.fullcycle.restore\n'
+      else
+        start=$SECONDS
+        prc=0
+        # Unquoted expansion, deliberately NOT eval -- the same rule run_option
+        # applies to a config `run:`, for the same reason.
+        # shellcheck disable=SC2086
+        ( cd "$PROJECT_ROOT" && $restore_cmd ) || prc=$?
+        elapsed=$((SECONDS - start))
+        printf '    phase: %-14s %8s  rc=%d\n' "restore" "$(fmt_duration "$elapsed")" "$prc"
+        [ "$prc" -eq 0 ] || rc="$prc"
+      fi
     fi
   fi
 
