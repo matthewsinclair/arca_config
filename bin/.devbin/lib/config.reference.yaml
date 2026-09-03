@@ -287,8 +287,15 @@ commands:
   # the fail-closed direction, and it is the same rule fullcycle already
   # applies when a project declares no build verb at all: it refuses rather
   # than proceeding without one.
+  # THE EXAMPLE IS A PLACEHOLDER AND NOT A CARGO LINE, WHICH IS ITSELF THE
+  # POINT. This file is a reference meant to be copied, and the estate that
+  # most needs this key is the one where `cargo build --release` is exactly the
+  # wrong answer -- its guard refused a vendored devbin carrying that literal
+  # here, in a YAML file nothing executes, precisely because a reference gets
+  # copied into a live config. Naming one estate's answer as THE answer teaches
+  # the opposite of what the key exists for.
   fullcycle:
-    restore: cargo build --release
+    restore: <this project's own release build -- the verb, not a raw toolchain call>
 
   # A built-in, enabled and parameterised.
   #
