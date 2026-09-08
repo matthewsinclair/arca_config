@@ -27,7 +27,8 @@ usage: $DEVBIN_INVOKE install [--into <dir>] [--name <n>] [--alias <a>] [--lang 
 
   --into <dir>   the project to install into (default: the current directory)
   --prefix <dir> PUBLISH mode only: where to publish the machine install
-                 (default: install.prefix in config, else ~/Devel/opt/devbin)
+                 (default: install.prefix in devbin's own config. There is no
+                 built-in default -- the location is configuration, D32)
   --name <n>     the project name (default: the target directory's name)
   --alias <a>    a short name this project may keep, eg 'cf' for conflab.
                  RECORDED ONLY -- devbin creates no symlink for it
@@ -184,7 +185,13 @@ main() {
     # down over the top of it.
     cfg_load "$DEVBIN_DIR/config.yaml" >/dev/null 2>&1 ||
       die "cannot read devbin's own config at $DEVBIN_DIR/config.yaml"
-    [ -n "$prefix" ] || prefix="$(install_prefix_configured)"
+    # `|| die_...` rather than a bare assignment, so the refusal happens HERE
+    # rather than as an unexplained errexit death at the assignment. There is no
+    # baked default any more: an unconfigured prefix is a configuration error,
+    # not a location to guess at (D32).
+    if [ -z "$prefix" ]; then
+      prefix="$(install_prefix_configured)" || die_install_prefix_unset '--prefix <dir>'
+    fi
     dstroot="$prefix"
   else
     dstroot="$(cd "${into:-.}" 2>/dev/null && pwd)" ||
@@ -228,8 +235,19 @@ main() {
   # copy AHEAD of the working tree in the dispatcher's own search order, so every
   # edit to lib/ would stop taking effect and the test suite would go on passing
   # against the copy.
-  [ "$dstroot" = "$srcroot" ] &&
-    die "cannot install devbin into its own source tree ($srcroot)"
+  # ANY dev tree, not just THIS one. The comparison was `dstroot = srcroot`,
+  # which only catches installing a tree into itself -- and the harm above has
+  # nothing to do with the two being the same. Installing from the machine
+  # install into devbin's source tree has a different source and an identical
+  # consequence, and on 2026-09-07 it happened: bin/.devbin/lib/ and a manifest
+  # landed in the dev tree, past a guard that could not see them because the
+  # source was somewhere else.
+  if is_devbin_dev_tree "$dstroot"; then
+    die "cannot install devbin into a devbin SOURCE tree ($dstroot)
+       It runs lib/ in place (D12); a vendored copy would sit ahead of the
+       working tree in the search order and every edit to lib/ would stop
+       taking effect, with the suite still green against the copy."
+  fi
 
   # PUBLISH refuses an existing install and names `upgrade`; VENDOR refuses and
   # names `--force`. Same shape, different remedy -- and the shape is not new:
