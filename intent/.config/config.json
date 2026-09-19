@@ -4,7 +4,7 @@
     "schedule": "daily"
   },
   "intent_dir": "intent",
-  "intent_version": "3.0.3",
+  "intent_version": "3.1.0",
   "languages": [
     "shell",
     "elixir"
