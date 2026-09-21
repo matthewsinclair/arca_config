@@ -1,0 +1,26 @@
+{
+  "id": "01M32A3C05QM3BNJFFTTN57HP3",
+  "ts": "2026-09-21T15:42:05.830Z",
+  "principal": "Matthew Sinclair <hello@matthewsinclair.com>",
+  "project_id": "3880b4be-d496-456d-8e34-e0f34d03fedd",
+  "op": "wb.register",
+  "subject": {
+    "type": "roster",
+    "id": "3880b4be-d496-456d-8e34-e0f34d03fedd"
+  },
+  "payload": {
+    "from": "headers",
+    "nodes": [
+      [
+        "cc",
+        "Control Claude",
+        "control"
+      ],
+      [
+        "vc",
+        "Validation Claude",
+        "validation"
+      ]
+    ]
+  }
+}

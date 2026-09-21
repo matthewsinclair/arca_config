@@ -1,0 +1,15 @@
+{
+  "id": "01M32A6HNFE94NR5N0Q1Y6KT4S",
+  "ts": "2026-09-21T15:43:49.936Z",
+  "principal": "Matthew Sinclair <hello@matthewsinclair.com>",
+  "project_id": "3880b4be-d496-456d-8e34-e0f34d03fedd",
+  "op": "wb.migrate",
+  "subject": {
+    "type": "node",
+    "id": "cc"
+  },
+  "payload": {
+    "items": 20,
+    "messages": 4
+  }
+}
