@@ -24,8 +24,25 @@ name: CI
 on:
   push:
     branches: [main]
+    # A push that only moves a board starts no run (devbin#0110). Path filters
+    # are not evaluated for pushes of tags, so this cannot suppress a release.
+    paths-ignore:
+      - 'intent/whiteboard/**'
   pull_request:
     branches: [main]
+
+# SUPERSEDED RUNS ARE CANCELLED ON EVERY EVENT (hv's ruling of 2026-09-21;
+# devbin#0108 carries the reasoning).
+# The EVENT is part of the key because a push and an on-demand run share a ref,
+# and a group keyed on the ref alone lets each cancel the other. GitHub already
+# replaces a PENDING run in a group; cancel-in-progress adds the RUNNING one.
+#
+# No tag trigger is added here, deliberately: that trigger exists to carry a
+# macOS leg onto a release, and this repository has no macOS job. Adding one
+# would start runs the ruling never asked for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   MIX_ENV: test
@@ -49,7 +66,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Only the cell that CLAIMS to track local is checked against the pin
       # file; the compatibility cells are deliberately older and must not be.
@@ -78,7 +95,7 @@ jobs:
           elixir-version: ${{ matrix.elixir }}
 
       - name: Restore dependencies cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             deps
